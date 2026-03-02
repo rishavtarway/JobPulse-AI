@@ -9,3 +9,30 @@ session/
 test-session/
 *.session
 coverage/
+
+# Job application sensitive data
+credential.json
+token.json
+*.pdf
+Cold_Mailing_Template*
+
+# Temporary testing files
+create_test_drafts.ts
+create_manual_drafts.ts
+create_openrouter_drafts.ts
+create_gmail_drafts.ts
+generate_emails.ts
+parse_jobs.ts
+list_models.ts
+auth_gmail.ts
+email_drafts.html
+*.txt
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!auto_apply_state.json
+
+# Exclude tasklists and logs
+MANUAL_APPLY_TASKS.md
+all_extracted_jobs_log.txt
