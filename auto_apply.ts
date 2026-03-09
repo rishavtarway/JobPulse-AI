@@ -276,6 +276,29 @@ async function extractNewJobs() {
 
     fs.appendFileSync('MANUAL_APPLY_TASKS.md', mdContent);
     console.log(`\n⚠️ Found ${manualJobs.length} jobs with web/form links instead of emails. Saved to MANUAL_APPLY_TASKS.md for you to review.`);
+
+    // Log Manual Jobs to Tracker
+    for (const job of manualJobs) {
+      try {
+        const port = process.env.SERVER_PORT || '3000';
+        // Simple company name extraction for links
+        let company = "Link Application";
+        const urlMatch = job.link.match(/https?:\/\/(?:www\.)?([^./]+)/i);
+        if (urlMatch) company = urlMatch[1].charAt(0).toUpperCase() + urlMatch[1].slice(1);
+
+        await fetch(`http://127.0.0.1:${port}/api/applications`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            company: company,
+            role: "Software Engineer",
+            link: job.link,
+            description: job.text,
+            status: 'to_apply'
+          })
+        });
+      } catch (e) { /* ignore log errors */ }
+    }
   }
 
   if (parsedJobs.length === 0) {
@@ -498,6 +521,25 @@ async function main() {
     try {
       await createDraftInGmail(gmail, job.email, subject, body);
       console.log(`   ✅ Draft created in Gmail.`);
+
+      // 3. Log to Tracker
+      try {
+        const port = process.env.SERVER_PORT || '3000';
+        await fetch(`http://127.0.0.1:${port}/api/applications`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            company: companyName,
+            role: "Software Engineer",
+            email: job.email,
+            description: job.text,
+            status: 'applied'
+          })
+        });
+      } catch (logErr) {
+        // Silent fail for logging
+      }
+
     } catch (e: any) {
       console.error(`   ❌ Failed to create draft:`, e.message);
     }

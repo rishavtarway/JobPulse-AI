@@ -112,6 +112,73 @@ app.get('/api/history', (req, res) => {
 });
 
 // ============================================================
+// API: Job Application Tracker
+// ============================================================
+const APPS_FILE = path.join(process.cwd(), 'applications.json');
+
+function readApps() {
+    try {
+        if (fs.existsSync(APPS_FILE)) {
+            return JSON.parse(fs.readFileSync(APPS_FILE, 'utf8'));
+        }
+    } catch (e) {
+        console.error('Error reading applications.json:', e);
+    }
+    return [];
+}
+
+function writeApps(apps: any[]) {
+    fs.writeFileSync(APPS_FILE, JSON.stringify(apps, null, 2));
+}
+
+app.get('/api/applications', (req, res) => {
+    res.json(readApps());
+});
+
+app.post('/api/applications', (req, res) => {
+    const { company, role, email, link, description, status = 'applied' } = req.body;
+    if (!company) return res.status(400).json({ error: 'Company is required' });
+
+    const apps = readApps();
+    const newApp = {
+        id: Date.now().toString(),
+        company,
+        role: role || 'Software Engineer',
+        email: email || '',
+        link: link || '',
+        description: description || '',
+        appliedDate: new Date().toISOString(),
+        status, // applied, intro_call, technical_round, hr_round, offered, rejected, no_response, to_apply
+        notes: ''
+    };
+
+    apps.push(newApp);
+    writeApps(apps);
+    res.json(newApp);
+});
+
+app.patch('/api/applications/:id', (req, res) => {
+    const { id } = req.params;
+    const updates = req.body;
+    const apps = readApps();
+    const idx = apps.findIndex((a: any) => a.id === id);
+
+    if (idx === -1) return res.status(404).json({ error: 'Application not found' });
+
+    apps[idx] = { ...apps[idx], ...updates };
+    writeApps(apps);
+    res.json(apps[idx]);
+});
+
+app.delete('/api/applications/:id', (req, res) => {
+    const { id } = req.params;
+    let apps = readApps();
+    apps = apps.filter((a: any) => a.id !== id);
+    writeApps(apps);
+    res.json({ success: true });
+});
+
+// ============================================================
 // API: Trigger Script
 // ============================================================
 let currentChildProcess: any = null;

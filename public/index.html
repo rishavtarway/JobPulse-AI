@@ -573,6 +573,144 @@
                 transform: scale(0.8);
             }
         }
+
+        /* Tracker Specific */
+        .status-to_apply {
+            color: #38bdf8;
+        }
+
+        .status-applied {
+            color: var(--accent);
+        }
+
+        .status-intro_call {
+            color: #8b5cf6;
+        }
+
+        .status-technical_round {
+            color: #f59e0b;
+        }
+
+        .status-hr_round {
+            color: #ec4899;
+        }
+
+        .status-offered {
+            color: var(--success);
+        }
+
+        .status-rejected {
+            color: var(--danger);
+        }
+
+        .status-no_response {
+            color: var(--muted);
+        }
+
+        .progress-track {
+            display: flex;
+            justify-content: space-between;
+            margin: 15px 0;
+            position: relative;
+        }
+
+        .progress-track::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--border);
+            z-index: 0;
+            transform: translateY(-50%);
+        }
+
+        .step {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--border);
+            z-index: 1;
+            position: relative;
+        }
+
+        .step.active {
+            background: var(--accent);
+            box-shadow: 0 0 10px var(--accent-glow);
+        }
+
+        .step.completed {
+            background: var(--success);
+        }
+
+        .tracker-card {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .tracker-info h3 {
+            font-size: 16px;
+            margin-bottom: 4px;
+        }
+
+        .tracker-info p {
+            font-size: 13px;
+            color: var(--muted);
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(5px);
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 12px;
+            color: var(--muted);
+            margin-bottom: 6px;
+        }
+
+        .form-group select,
+        .form-group textarea,
+        .form-group input {
+            width: 100%;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px;
+            color: var(--text);
+            outline: none;
+        }
     </style>
 </head>
 
@@ -634,7 +772,8 @@
 
         <!-- Tabs -->
         <div class="tabs">
-            <div class="tab active" id="tab-live" onclick="switchTab('logs', this)">📟 Live Logs</div>
+            <div class="tab active" id="tab-live-btn" onclick="switchTab('logs', this)">📟 Live Logs</div>
+            <div class="tab" id="tab-tracker-btn" onclick="switchTab('tracker', this)">🎯 Job Tracker</div>
             <div class="tab" id="tab-tasks-btn" onclick="switchTab('tasks', this)">📋 Manual Tasks</div>
             <div class="tab" id="tab-hist-btn" onclick="switchTab('history', this)">📜 History</div>
         </div>
@@ -651,6 +790,54 @@
                 <span class="badge badge-idle" id="status-badge">● Idle</span>
             </div>
             <div id="terminal">Waiting to run... Click "Fetch New Jobs &amp; Auto-Apply" to start.\n</div>
+        </div>
+
+        <!-- TRACKER TAB -->
+        <div id="tab-tracker" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">🎯 Active Application Tracking</span>
+                    <button class="refresh-btn" onclick="fetchApps()">↻ Refresh</button>
+                </div>
+                <div id="tracker-container">
+                    <div class="empty">
+                        <div class="empty-icon">🎯</div>No applications tracked yet.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Update Modal -->
+        <div id="modal-update" class="modal">
+            <div class="modal-content">
+                <div class="card-header" style="margin-bottom:20px">
+                    <span class="card-title">Update Application Status</span>
+                    <button class="refresh-btn" onclick="closeModal()">✕</button>
+                </div>
+                <input type="hidden" id="edit-app-id">
+                <div class="form-group">
+                    <label>Status</label>
+                    <select id="edit-status">
+                        <option value="applied">Applied / Drafted</option>
+                        <option value="intro_call">Preliminary / Intro Call</option>
+                        <option value="technical_round">Technical Interview</option>
+                        <option value="hr_round">HR / Culture Interview</option>
+                        <option value="offered">🏆 Offer Received</option>
+                        <option value="rejected">Rejected</option>
+                        <option value="no_response">No Response</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Notes</label>
+                    <textarea id="edit-notes" placeholder="e.g. Asked about React hooks, mention fuzzy PR..."
+                        rows="3"></textarea>
+                </div>
+                <div style="display:flex; gap:10px; margin-top:20px">
+                    <button class="trigger-btn" onclick="saveAppUpdate()" style="margin:0; flex:1">Save Changes</button>
+                    <button class="trigger-btn" onclick="deleteApp()"
+                        style="margin:0; flex:0.4; background:var(--danger)">Delete</button>
+                </div>
+            </div>
         </div>
 
         <!-- TASKS TAB -->
@@ -701,8 +888,120 @@
             elem.classList.add('active');
             document.getElementById('tab-' + tabName).classList.add('active');
             activeTab = tabName;
+            if (tabName === 'tracker') fetchApps();
             if (tabName === 'tasks') fetchTasks();
             if (tabName === 'history') fetchHistory();
+        }
+
+        // ─── Tracker Logic ────────────────────────────────────────────────────────
+        async function fetchApps() {
+            const container = document.getElementById('tracker-container');
+            try {
+                const res = await fetch('/api/applications');
+                const apps = await res.json();
+                renderApps(apps);
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function renderApps(apps) {
+            const container = document.getElementById('tracker-container');
+            if (!apps || apps.length === 0) {
+                container.innerHTML = '<div class="empty"><div class="empty-icon">🎯</div>No applications found yet.</div>';
+                return;
+            }
+
+            container.innerHTML = apps.reverse().map(app => {
+                const dateStr = new Date(app.appliedDate).toLocaleDateString('en-IN', {
+                    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+                });
+
+                const statusLabels = {
+                    'to_apply': { name: 'To Apply (Link)', idx: 0 },
+                    'applied': { name: 'Applied', idx: 1 },
+                    'intro_call': { name: 'Intro Call', idx: 2 },
+                    'technical_round': { name: 'Technical', idx: 3 },
+                    'hr_round': { name: 'HR / Final', idx: 4 },
+                    'offered': { name: 'Offered', idx: 5 },
+                    'rejected': { name: 'Rejected', idx: -1 },
+                    'no_response': { name: 'No Response', idx: -1 }
+                };
+
+                const currentStatus = statusLabels[app.status] || { name: 'Unknown', idx: 0 };
+                const isFailed = app.status === 'rejected' || app.status === 'no_response';
+
+                let progressHtml = '';
+                if (!isFailed) {
+                    progressHtml = `
+                        <div class="progress-track">
+                            <div class="step ${currentStatus.idx >= 0 ? 'completed' : ''} ${currentStatus.idx == 0 ? 'active' : ''}"></div>
+                            <div class="step ${currentStatus.idx >= 1 ? 'completed' : ''} ${currentStatus.idx == 1 ? 'active' : ''}"></div>
+                            <div class="step ${currentStatus.idx >= 2 ? 'completed' : ''} ${currentStatus.idx == 2 ? 'active' : ''}"></div>
+                            <div class="step ${currentStatus.idx >= 3 ? 'completed' : ''} ${currentStatus.idx == 3 ? 'active' : ''}"></div>
+                            <div class="step ${currentStatus.idx >= 4 ? 'completed' : ''} ${currentStatus.idx == 4 ? 'active' : ''}"></div>
+                            <div class="step ${currentStatus.idx >= 5 ? 'completed' : ''} ${currentStatus.idx == 5 ? 'active' : ''}"></div>
+                        </div>
+                    `;
+                }
+
+                return `
+                    <div class="task-card tracker-card" onclick="openUpdateModal('${app.id}', '${app.status}', \`${app.notes || ''}\`)">
+                        <div class="tracker-info">
+                            <div class="task-meta">${dateStr}</div>
+                            <h3>${app.company}</h3>
+                            <p>${app.role} — <span class="status-${app.status}">${currentStatus.name}</span></p>
+                            ${progressHtml}
+                            ${app.notes ? `<div class="task-desc" style="margin-top:10px; opacity:0.8">📝 ${app.notes}</div>` : ''}
+                            ${app.link ? `<a href="${app.link}" target="_blank" class="btn-extension" style="margin-top:10px; font-size:10px;" onclick="event.stopPropagation()">🔗 Open Form / Link</a>` : ''}
+                        </div>
+                        <div style="font-size:20px; color:var(--muted)">⚙️</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function openUpdateModal(id, status, notes) {
+            document.getElementById('edit-app-id').value = id;
+            document.getElementById('edit-status').value = status;
+            document.getElementById('edit-notes').value = notes;
+            document.getElementById('modal-update').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('modal-update').classList.remove('active');
+        }
+
+        async function saveAppUpdate() {
+            const id = document.getElementById('edit-app-id').value;
+            const status = document.getElementById('edit-status').value;
+            const notes = document.getElementById('edit-notes').value;
+
+            try {
+                const res = await fetch('/api/applications/' + id, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status, notes })
+                });
+                if (res.ok) {
+                    showToast('Application updated!', 'success');
+                    closeModal();
+                    fetchApps();
+                }
+            } catch (e) { showToast('Update failed', 'error'); }
+        }
+
+        async function deleteApp() {
+            if (!confirm('Delete this record?')) return;
+            const id = document.getElementById('edit-app-id').value;
+            try {
+                const res = await fetch('/api/applications/' + id, { method: 'DELETE' });
+                if (res.ok) {
+                    showToast('Record deleted');
+                    closeModal();
+                    fetchApps();
+                }
+            } catch (e) { showToast('Delete failed', 'error'); }
         }
 
         // ─── Toast ─────────────────────────────────────────────────────────────────
