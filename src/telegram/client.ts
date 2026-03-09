@@ -16,15 +16,15 @@ export class TelegramClient {
   constructor(config: TelegramConfig) {
     this.config = config;
     const appConfig = Config.getInstance();
-    
+
     // Configure tdl to use prebuilt TDLib
     configure({
       tdjson: getTdjson(),
       verbosityLevel: appConfig.isDevelopment() ? 3 : 1,
     });
-    
+
     // Ensure session directory exists
-    mkdir(config.sessionDir, { recursive: true }).catch(() => {});
+    mkdir(config.sessionDir, { recursive: true }).catch(() => { });
 
     this.client = createClient({
       apiId: config.apiId,
@@ -38,7 +38,7 @@ export class TelegramClient {
 
   private setupEventHandlers() {
     const appConfig = Config.getInstance();
-    
+
     this.client.on('error', (error: any) => {
       Logger.error('Telegram client error', error);
     });
@@ -51,7 +51,10 @@ export class TelegramClient {
     });
   }
 
-  async connect(): Promise<void> {
+  async connect(opts?: {
+    getAuthCode?: () => Promise<string>;
+    getPassword?: () => Promise<string>;
+  }): Promise<void> {
     if (this.isConnected) return;
 
     try {
@@ -59,8 +62,8 @@ export class TelegramClient {
       await this.client.login(() => ({
         type: 'user' as const,
         getPhoneNumber: () => Promise.resolve(this.config.phone),
-        getAuthCode: () => this.promptForCode(),
-        getPassword: () => this.promptForPassword(),
+        getAuthCode: opts?.getAuthCode ? opts.getAuthCode : () => this.promptForCode(),
+        getPassword: opts?.getPassword ? opts.getPassword : () => this.promptForPassword(),
         getName: () => Promise.resolve({ firstName: 'MCP', lastName: 'User' }),
       }));
 
@@ -72,10 +75,10 @@ export class TelegramClient {
     }
   }
 
-  private async promptForCode(): Promise<string> {
+  protected async promptForCode(): Promise<string> {
     const rl = readline.createInterface({
       input: process.stdin,
-      output: process.stderr, // Use stderr to avoid interfering with MCP stdio
+      output: process.stderr,
     });
 
     return new Promise((resolve) => {
@@ -86,10 +89,10 @@ export class TelegramClient {
     });
   }
 
-  private async promptForPassword(): Promise<string> {
+  protected async promptForPassword(): Promise<string> {
     const rl = readline.createInterface({
       input: process.stdin,
-      output: process.stderr, // Use stderr to avoid interfering with MCP stdio
+      output: process.stderr,
     });
 
     return new Promise((resolve) => {
@@ -481,9 +484,9 @@ export class TelegramClient {
   }
 
   private hasMedia(message: any): boolean {
-    return !!(message.content?.photo || message.content?.video || message.content?.document || 
-              message.content?.audio || message.content?.voice_note || message.content?.sticker ||
-              message.content?.animation);
+    return !!(message.content?.photo || message.content?.video || message.content?.document ||
+      message.content?.audio || message.content?.voice_note || message.content?.sticker ||
+      message.content?.animation);
   }
 
   private extractFileFromMessage(message: any): any {
@@ -502,7 +505,7 @@ export class TelegramClient {
     const content = message.content;
     if (content.document?.file_name) return content.document.file_name;
     if (content.audio?.file_name) return content.audio.file_name;
-    
+
     // Generate filename based on type
     const messageId = message.id;
     if (content.photo) return `photo_${messageId}.jpg`;
@@ -510,7 +513,7 @@ export class TelegramClient {
     if (content.voice_note) return `voice_${messageId}.ogg`;
     if (content.sticker) return `sticker_${messageId}.webp`;
     if (content.animation) return `animation_${messageId}.gif`;
-    
+
     return `file_${messageId}`;
   }
 

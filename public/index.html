@@ -1,263 +1,1010 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Auto-Apply Dashboard</title>
+    <title>Auto-Apply Dashboard — Rishav Tarway</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
     <style>
         :root {
-            --bg-color: #0f172a;
-            --card-bg: #1e293b;
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
+            --bg: #080c14;
+            --surface: #0f1623;
+            --card: #141e2e;
+            --border: #1e2d42;
             --accent: #3b82f6;
+            --accent-glow: rgba(59, 130, 246, 0.2);
             --accent-hover: #2563eb;
             --success: #10b981;
+            --warning: #f59e0b;
             --danger: #ef4444;
+            --text: #e2e8f0;
+            --muted: #64748b;
+            --green: #00ff88;
         }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-main);
+
+        * {
+            box-sizing: border-box;
             margin: 0;
-            padding: 20px;
-            line-height: 1.6;
+            padding: 0;
         }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 0;
         }
-        h1 {
-            text-align: center;
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #0a1628 0%, #0f2040 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--accent), #8b5cf6);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+
+        .header h1 {
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .header-badge {
+            font-size: 11px;
+            background: rgba(59, 130, 246, 0.15);
             color: var(--accent);
-            margin-bottom: 30px;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-weight: 600;
         }
-        .card {
-            background-color: var(--card-bg);
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 24px 20px;
+        }
+
+        /* Main trigger button */
+        .trigger-btn {
+            width: 100%;
+            padding: 16px;
+            background: linear-gradient(135deg, var(--accent), #2563eb);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 20px;
+            letter-spacing: 0.3px;
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+        }
+
+        .trigger-btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 0 30px rgba(59, 130, 246, 0.5);
+        }
+
+        .trigger-btn:disabled {
+            background: var(--card);
+            color: var(--muted);
+            box-shadow: none;
+            cursor: not-allowed;
+        }
+
+        /* OTP Alert Box */
+        #otp-box {
+            display: none;
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.05));
+            border: 1px solid rgba(245, 158, 11, 0.4);
             border-radius: 12px;
             padding: 20px;
             margin-bottom: 20px;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            animation: pulseWarning 2s infinite;
         }
-        .header-flex {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
+
+        #otp-box.active {
+            display: block;
         }
-        button {
-            background-color: var(--accent);
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            font-size: 16px;
-            font-weight: 600;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: background-color 0.2s;
-            width: 100%;
+
+        #password-box {
+            display: none;
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.05));
+            border: 1px solid rgba(139, 92, 246, 0.4);
+            border-radius: 12px;
+            padding: 20px;
             margin-bottom: 20px;
         }
-        button:hover { background-color: var(--accent-hover); }
-        button:disabled { background-color: var(--text-muted); cursor: not-allowed; }
 
-        #terminal {
-            background-color: #000;
-            color: #00ff00;
-            font-family: monospace;
-            padding: 15px;
-            border-radius: 8px;
-            height: 300px;
-            overflow-y: auto;
-            white-space: pre-wrap;
+        #password-box.active {
+            display: block;
+        }
+
+        @keyframes pulseWarning {
+
+            0%,
+            100% {
+                border-color: rgba(245, 158, 11, 0.4);
+            }
+
+            50% {
+                border-color: rgba(245, 158, 11, 0.8);
+                box-shadow: 0 0 15px rgba(245, 158, 11, 0.2);
+            }
+        }
+
+        .otp-title {
             font-size: 14px;
-            margin-bottom: 10px;
+            font-weight: 700;
+            color: var(--warning);
+            margin-bottom: 8px;
         }
 
-        .task-card {
-            background-color: rgba(255, 255, 255, 0.05);
-            border-left: 4px solid var(--accent);
-            padding: 15px;
-            margin-bottom: 15px;
-            border-radius: 4px 8px 8px 4px;
-        }
-        .task-date { font-size: 12px; color: var(--text-muted); }
-        .task-link {
-            display: inline-block;
-            background-color: var(--success);
-            color: white;
-            text-decoration: none;
-            padding: 8px 16px;
-            border-radius: 6px;
-            margin-top: 10px;
-            font-weight: bold;
-        }
-        .history-line {
+        .otp-desc {
             font-size: 13px;
-            color: var(--text-muted);
-            border-bottom: 1px solid rgba(255,255,255,0.1);
-            padding: 8px 0;
+            color: var(--muted);
+            margin-bottom: 14px;
+        }
+
+        .otp-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        .otp-input {
+            flex: 1;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 16px;
+            color: var(--text);
+            font-size: 20px;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            letter-spacing: 8px;
+            text-align: center;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .otp-input:focus {
+            border-color: var(--warning);
+        }
+
+        .otp-submit {
+            background: var(--warning);
+            color: #000;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            white-space: nowrap;
+        }
+
+        .otp-submit:hover {
+            opacity: 0.85;
         }
 
         /* Tabs */
         .tabs {
             display: flex;
-            gap: 10px;
+            gap: 4px;
             margin-bottom: 20px;
+            background: var(--card);
+            border-radius: 12px;
+            padding: 4px;
         }
+
         .tab {
             flex: 1;
             padding: 10px;
             text-align: center;
-            background-color: var(--card-bg);
             border-radius: 8px;
             cursor: pointer;
-            font-weight: bold;
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--muted);
+            transition: all 0.2s;
         }
+
+        .tab:hover {
+            color: var(--text);
+            background: var(--surface);
+        }
+
         .tab.active {
-            background-color: var(--accent);
+            background: var(--accent);
+            color: white;
         }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .card-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .badge {
+            font-size: 11px;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+
+        .badge-running {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--success);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .badge-idle {
+            background: rgba(100, 116, 139, 0.15);
+            color: var(--muted);
+            border: 1px solid rgba(100, 116, 139, 0.3);
+        }
+
+        .badge-warning {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--warning);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
+        .refresh-btn {
+            background: var(--surface);
+            color: var(--muted);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 6px 14px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .refresh-btn:hover {
+            color: var(--accent);
+            border-color: var(--accent);
+        }
+
+        /* Terminal */
+        #terminal {
+            background: #000;
+            color: var(--green);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12.5px;
+            padding: 16px;
+            border-radius: 8px;
+            height: 360px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            line-height: 1.6;
+            border: 1px solid #0d1f0d;
+        }
+
+        #terminal::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        #terminal::-webkit-scrollbar-track {
+            background: #000;
+        }
+
+        #terminal::-webkit-scrollbar-thumb {
+            background: #1a3d1a;
+            border-radius: 3px;
+        }
+
+        /* Task Cards */
+        .task-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-left: 3px solid var(--accent);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 14px;
+            transition: border-color 0.2s;
+        }
+
+        .task-card:hover {
+            border-left-color: #60a5fa;
+        }
+
+        .task-meta {
+            font-size: 11px;
+            color: var(--muted);
+            margin-bottom: 10px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .task-desc {
+            font-size: 13px;
+            color: var(--text);
+            line-height: 1.6;
+            margin-bottom: 14px;
+            max-height: 100px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .task-desc.expandable::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 30px;
+            background: linear-gradient(transparent, var(--surface));
+        }
+
+        .task-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .btn-apply {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--success);
+            color: white;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 700;
+            transition: opacity 0.2s;
+        }
+
+        .btn-apply:hover {
+            opacity: 0.85;
+        }
+
+        .btn-extension {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--surface);
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+        }
+
+        .btn-extension:hover {
+            background: var(--accent-glow);
+        }
+
+        .copy-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--muted);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .copy-link:hover {
+            color: var(--text);
+            border-color: var(--muted);
+        }
+
+        /* History */
+        .history-line {
+            font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--muted);
+            border-bottom: 1px solid var(--border);
+            padding: 10px 0;
+            line-height: 1.5;
+        }
+
+        .history-line:last-child {
+            border-bottom: none;
+        }
+
+        /* Stats bar */
+        .stats-bar {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .stat-pill {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 16px;
+            flex: 1;
+            text-align: center;
+        }
+
+        .stat-num {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: var(--muted);
+            margin-top: 2px;
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 12px 20px;
+            font-size: 13px;
+            font-weight: 600;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.3s;
+            z-index: 999;
+            pointer-events: none;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .toast.success {
+            border-color: rgba(16, 185, 129, 0.5);
+            color: var(--success);
+        }
+
+        .toast.error {
+            border-color: rgba(239, 68, 68, 0.5);
+            color: var(--danger);
+        }
+
+        .toast.info {
+            border-color: rgba(59, 130, 246, 0.5);
+            color: var(--accent);
+        }
+
+        /* Empty states */
+        .empty {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .empty-icon {
+            font-size: 36px;
+            margin-bottom: 10px;
+        }
+
+        /* Pulse dot */
+        .pulse-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+            margin-right: 6px;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+
+            50% {
+                opacity: 0.5;
+                transform: scale(0.8);
+            }
+        }
     </style>
 </head>
+
 <body>
 
-<div class="container">
-    <h1>🚀 Auto-Apply Dashboard</h1>
-
-    <button id="btn-trigger" onclick="triggerScript()">Fetch & Apply Now</button>
-
-    <div class="tabs">
-        <div class="tab active" onclick="switchTab('logs')">Live Logs</div>
-        <div class="tab" onclick="switchTab('tasks')">Manual Tasks</div>
-        <div class="tab" onclick="switchTab('history')">History</div>
-    </div>
-
-    <!-- LOGS TAB -->
-    <div id="tab-logs" class="tab-content active card">
-        <div class="header-flex">
-            <h3 style="margin:0;">Terminal Output</h3>
-            <span id="status-badge" style="color: var(--text-muted)">Idle</span>
+    <div class="header">
+        <div class="header-left">
+            <div class="logo">🤖</div>
+            <h1>Auto-Apply Dashboard</h1>
         </div>
-        <div id="terminal">Waiting to run...</div>
+        <span class="header-badge">Rishav Tarway</span>
     </div>
 
-    <!-- TASKS TAB -->
-    <div id="tab-tasks" class="tab-content card">
-        <div class="header-flex">
-            <h3 style="margin:0;">Manual Application Links</h3>
-            <button onclick="fetchTasks()" style="width:auto; margin:0; padding: 6px 12px; font-size:14px;">Refresh</button>
+    <div class="container">
+
+        <!-- Stats Bar -->
+        <div class="stats-bar">
+            <div class="stat-pill">
+                <div class="stat-num" id="stat-tasks">—</div>
+                <div class="stat-label">Manual Tasks</div>
+            </div>
+            <div class="stat-pill">
+                <div class="stat-num" id="stat-history">—</div>
+                <div class="stat-label">Jobs Logged</div>
+            </div>
+            <div class="stat-pill">
+                <div class="stat-num" id="stat-status">Idle</div>
+                <div class="stat-label">Status</div>
+            </div>
         </div>
-        <p style="font-size: 14px; color: var(--text-muted);">These jobs used Google Forms or external links instead of emails. Apply manually here:</p>
-        <div id="tasks-container">Loading...</div>
-    </div>
 
-    <!-- HISTORY TAB -->
-    <div id="tab-history" class="tab-content card">
-        <div class="header-flex">
-            <h3 style="margin:0;">Recent Job History</h3>
-            <button onclick="fetchHistory()" style="width:auto; margin:0; padding: 6px 12px; font-size:14px;">Refresh</button>
+        <!-- Main Trigger Button -->
+        <button class="trigger-btn" id="btn-trigger" onclick="triggerScript()">
+            ⚡ Fetch New Jobs & Auto-Apply
+        </button>
+
+        <!-- OTP Input Box (shown when Telegram needs auth) -->
+        <div id="otp-box">
+            <div class="otp-title">⚠️ Telegram OTP Required</div>
+            <div class="otp-desc">Telegram sent a verification code to your phone/app. Enter it below:</div>
+            <div class="otp-row">
+                <input class="otp-input" type="text" id="otp-input" maxlength="6" placeholder="——————"
+                    autocomplete="one-time-code" inputmode="numeric">
+                <button class="otp-submit" onclick="submitOtp()">Submit OTP</button>
+            </div>
         </div>
-        <div id="history-container">Loading...</div>
+
+        <!-- 2FA Password Box -->
+        <div id="password-box">
+            <div class="otp-title" style="color: #a78bfa">🔐 2FA Password Required</div>
+            <div class="otp-desc">Enter your Telegram two-factor authentication password:</div>
+            <div class="otp-row">
+                <input class="otp-input" type="password" id="password-input" placeholder="••••••••"
+                    style="letter-spacing:4px; font-size:18px">
+                <button class="otp-submit" style="background:#8b5cf6;color:white"
+                    onclick="submitPassword()">Submit</button>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <div class="tab active" id="tab-live" onclick="switchTab('logs', this)">📟 Live Logs</div>
+            <div class="tab" id="tab-tasks-btn" onclick="switchTab('tasks', this)">📋 Manual Tasks</div>
+            <div class="tab" id="tab-hist-btn" onclick="switchTab('history', this)">📜 History</div>
+        </div>
+
+        <!-- LOGS TAB -->
+        <div id="tab-logs" class="tab-content active card">
+            <div class="card-header">
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <span class="card-title">Terminal Output</span>
+                    <button id="btn-stop" class="refresh-btn"
+                        style="color:var(--danger); border-color:rgba(239,68,68,0.3); display:none;"
+                        onclick="stopScript()">🛑 Stop Process</button>
+                </div>
+                <span class="badge badge-idle" id="status-badge">● Idle</span>
+            </div>
+            <div id="terminal">Waiting to run... Click "Fetch New Jobs &amp; Auto-Apply" to start.\n</div>
+        </div>
+
+        <!-- TASKS TAB -->
+        <div id="tab-tasks" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">📋 Manual Application Links</span>
+                    <button class="refresh-btn" onclick="fetchTasks()">↻ Refresh</button>
+                </div>
+                <p style="font-size: 13px; color: var(--muted); margin-bottom: 16px;">These jobs used Google Forms or
+                    external links. Apply manually or use the Chrome Extension:</p>
+                <div id="tasks-container">
+                    <div class="empty">
+                        <div class="empty-icon">📭</div>Loading tasks...
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- HISTORY TAB -->
+        <div id="tab-history" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">📜 Job History (Last 50)</span>
+                    <button class="refresh-btn" onclick="fetchHistory()">↻ Refresh</button>
+                </div>
+                <div id="history-container">
+                    <div class="empty">
+                        <div class="empty-icon">📂</div>Loading history...
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </div>
 
-</div>
+    <!-- Toast Notification -->
+    <div class="toast" id="toast"></div>
 
-<script>
-    let pollInterval;
+    <script>
+        let pollInterval = null;
+        let activeTab = 'logs';
 
-    function switchTab(tabName) {
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-
-        event.target.classList.add('active');
-        document.getElementById('tab-' + tabName).classList.add('active');
-
-        if (tabName === 'tasks') fetchTasks();
-        if (tabName === 'history') fetchHistory();
-    }
-
-    async function triggerScript() {
-        const btn = document.getElementById('btn-trigger');
-        btn.disabled = true;
-        btn.innerText = "Running...";
-        document.getElementById('status-badge').innerText = "🟢 Running";
-        document.getElementById('status-badge').style.color = "var(--success)";
-
-        document.getElementById('terminal').innerText = "Initializing...\n";
-
-        try {
-            await fetch('/api/trigger', { method: 'POST' });
-            startPolling();
-        } catch (e) {
-            alert('Failed to start script');
-            btn.disabled = false;
-            btn.innerText = "Fetch & Apply Now";
+        // ─── Tab Switching ─────────────────────────────────────────────────────────
+        function switchTab(tabName, elem) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            elem.classList.add('active');
+            document.getElementById('tab-' + tabName).classList.add('active');
+            activeTab = tabName;
+            if (tabName === 'tasks') fetchTasks();
+            if (tabName === 'history') fetchHistory();
         }
-    }
 
-    function startPolling() {
-        clearInterval(pollInterval);
-        pollInterval = setInterval(async () => {
-            const res = await fetch('/api/logs');
-            const data = await res.json();
+        // ─── Toast ─────────────────────────────────────────────────────────────────
+        function showToast(msg, type = 'info') {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = `toast ${type} show`;
+            setTimeout(() => t.classList.remove('show'), 3000);
+        }
+
+        // ─── Copy to clipboard ─────────────────────────────────────────────────────
+        function copyLink(url) {
+            navigator.clipboard.writeText(url).then(() => showToast('Link copied!', 'success'));
+        }
+
+        // ─── Trigger Script ─────────────────────────────────────────────────────────
+        async function triggerScript() {
+            const btn = document.getElementById('btn-trigger');
+            btn.disabled = true;
+            btn.innerHTML = '⏳ Running...';
+            setStatus('running');
 
             const term = document.getElementById('terminal');
-            term.innerText = data.logs || "Waiting for output...";
-            term.scrollTop = term.scrollHeight;
+            term.innerText = '🚀 Initializing...\n';
+            hideOtpBoxes();
 
-            if (!data.isRunning) {
-                clearInterval(pollInterval);
-                const btn = document.getElementById('btn-trigger');
-                btn.disabled = false;
-                btn.innerText = "Fetch & Apply Now";
-                document.getElementById('status-badge').innerText = "Idle";
-                document.getElementById('status-badge').style.color = "var(--text-muted)";
+            try {
+                const res = await fetch('/api/trigger', { method: 'POST' });
+                const data = await res.json();
 
-                // Refresh other tabs when done
-                fetchTasks();
-                fetchHistory();
+                if (res.status === 400 && data.error === 'Process is already running') {
+                    showToast('Joining already running process...', 'info');
+                    term.innerText = '📡 Attaching to existing process logs...\n';
+                    startPolling();
+                    return;
+                }
+
+                if (!res.ok) {
+                    showToast(data.error || 'Failed to start', 'error');
+                    resetButton();
+                    return;
+                }
+                startPolling();
+            } catch (e) {
+                showToast('Failed to reach server', 'error');
+                resetButton();
             }
-        }, 1000);
-    }
-
-    async function fetchTasks() {
-        const res = await fetch('/api/manual-tasks');
-        const tasks = await res.json();
-        const container = document.getElementById('tasks-container');
-
-        if (tasks.length === 0) {
-            container.innerHTML = "<p>No manual tasks found.</p>";
-            return;
         }
 
-        container.innerHTML = tasks.map(t => `
-            <div class="task-card">
-                <div class="task-date">Found on: ${new Date(t.date).toLocaleString()}</div>
-                <p><strong>Job Details:</strong><br>${t.description.replace(/\n/g, '<br>')}</p>
-                <a href="${t.link}" target="_blank" class="task-link">Open Link to Apply</a>
-            </div>
-        `).join('');
-    }
-
-    async function fetchHistory() {
-        const res = await fetch('/api/history');
-        const history = await res.json();
-        const container = document.getElementById('history-container');
-
-        if (history.length === 0) {
-            container.innerHTML = "<p>No history found.</p>";
-            return;
+        function resetButton() {
+            const btn = document.getElementById('btn-trigger');
+            btn.disabled = false;
+            btn.innerHTML = '⚡ Fetch New Jobs & Auto-Apply';
+            setStatus('idle');
         }
 
-        container.innerHTML = history.map(h => `<div class="history-line">${h}</div>`).join('');
-    }
+        function setStatus(state) {
+            const badge = document.getElementById('status-badge');
+            const stat = document.getElementById('stat-status');
+            const stopBtn = document.getElementById('btn-stop');
 
-    // Initial fetch
-    fetchTasks();
-    fetchHistory();
-</script>
+            if (state === 'running') {
+                badge.className = 'badge badge-running';
+                badge.innerHTML = '<span class="pulse-dot"></span> Running';
+                stat.textContent = 'Running';
+                stat.style.color = 'var(--success)';
+                stopBtn.style.display = 'inline-block';
+            } else if (state === 'otp') {
+                badge.className = 'badge badge-warning';
+                badge.innerHTML = '⚠️ Needs OTP';
+                stat.textContent = 'Waiting';
+                stat.style.color = 'var(--warning)';
+                stopBtn.style.display = 'inline-block';
+            } else {
+                badge.className = 'badge badge-idle';
+                badge.innerHTML = '● Idle';
+                stat.textContent = 'Idle';
+                stat.style.color = 'var(--accent)';
+                stopBtn.style.display = 'none';
+            }
+        }
+
+        async function stopScript() {
+            if (!confirm('Are you sure you want to terminate the current process?')) return;
+            try {
+                const res = await fetch('/api/stop', { method: 'POST' });
+                if (res.ok) {
+                    showToast('Termination signal sent', 'info');
+                } else {
+                    const data = await res.json();
+                    showToast(data.error || 'Failed to stop', 'error');
+                }
+            } catch (e) {
+                showToast('Failed to reach server', 'error');
+            }
+        }
+
+        // Check status on page load
+        (async () => {
+            try {
+                const res = await fetch('/api/logs');
+                const data = await res.json();
+                if (data.isRunning) {
+                    setStatus('running');
+                    startPolling();
+                }
+            } catch (e) { }
+        })();
+
+        // ─── Polling ────────────────────────────────────────────────────────────────
+        function startPolling() {
+            clearInterval(pollInterval);
+            pollInterval = setInterval(pollLogs, 800);
+        }
+
+        async function pollLogs() {
+            try {
+                const res = await fetch('/api/logs');
+                const data = await res.json();
+
+                // Update terminal
+                const term = document.getElementById('terminal');
+                const wasAtBottom = term.scrollTop + term.clientHeight >= term.scrollHeight - 20;
+                term.innerText = data.logs || 'Waiting for output...';
+                if (wasAtBottom) term.scrollTop = term.scrollHeight;
+
+                // OTP requested?
+                const otpBox = document.getElementById('otp-box');
+                const pwBox = document.getElementById('password-box');
+
+                if (data.otpRequired && !otpBox.classList.contains('active')) {
+                    otpBox.classList.add('active');
+                    document.getElementById('otp-input').focus();
+                    setStatus('otp');
+                    showToast('⚠️ OTP required — check the dashboard!', 'info');
+                } else if (!data.otpRequired) {
+                    otpBox.classList.remove('active');
+                }
+
+                if (data.passwordRequired && !pwBox.classList.contains('active')) {
+                    pwBox.classList.add('active');
+                    document.getElementById('password-input').focus();
+                } else if (!data.passwordRequired) {
+                    pwBox.classList.remove('active');
+                }
+
+                // Done?
+                if (!data.isRunning) {
+                    clearInterval(pollInterval);
+                    resetButton();
+                    hideOtpBoxes();
+                    setTimeout(() => {
+                        fetchTasks();
+                        fetchHistory();
+                    }, 500);
+                }
+            } catch (e) {
+                // Server might have restarted — stop polling
+                clearInterval(pollInterval);
+                resetButton();
+            }
+        }
+
+        function hideOtpBoxes() {
+            document.getElementById('otp-box').classList.remove('active');
+            document.getElementById('password-box').classList.remove('active');
+        }
+
+        // ─── Submit OTP ─────────────────────────────────────────────────────────────
+        async function submitOtp() {
+            const code = document.getElementById('otp-input').value.trim();
+            if (!code) { showToast('Please enter the OTP code', 'error'); return; }
+
+            try {
+                const res = await fetch('/api/submit-otp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    document.getElementById('otp-input').value = '';
+                    document.getElementById('otp-box').classList.remove('active');
+                    setStatus('running');
+                    showToast('✅ OTP submitted!', 'success');
+                } else {
+                    showToast(data.error || 'Failed to submit OTP', 'error');
+                }
+            } catch (e) {
+                showToast('Connection error', 'error');
+            }
+        }
+
+        // ─── Submit Password ─────────────────────────────────────────────────────────
+        async function submitPassword() {
+            const pw = document.getElementById('password-input').value;
+            if (!pw) { showToast('Please enter your password', 'error'); return; }
+
+            try {
+                const res = await fetch('/api/submit-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: pw })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    document.getElementById('password-input').value = '';
+                    document.getElementById('password-box').classList.remove('active');
+                    setStatus('running');
+                    showToast('✅ Password submitted!', 'success');
+                } else {
+                    showToast(data.error || 'Failed to submit password', 'error');
+                }
+            } catch (e) {
+                showToast('Connection error', 'error');
+            }
+        }
+
+        // Allow Enter key to submit OTP/password
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('otp-input').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') submitOtp();
+            });
+            document.getElementById('password-input').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') submitPassword();
+            });
+        });
+
+        // ─── Fetch Manual Tasks ──────────────────────────────────────────────────────
+        async function fetchTasks() {
+            const container = document.getElementById('tasks-container');
+            try {
+                const res = await fetch('/api/manual-tasks');
+                const tasks = await res.json();
+
+                document.getElementById('stat-tasks').textContent = tasks.length;
+
+                if (tasks.length === 0) {
+                    container.innerHTML = '<div class="empty"><div class="empty-icon">📭</div>No manual tasks yet. Run "Fetch & Apply" to find new jobs.</div>';
+                    return;
+                }
+
+                container.innerHTML = tasks.map(t => {
+                    const desc = t.description || 'No description available.';
+                    const shortDesc = desc.length > 200 ? desc.substring(0, 200) + '...' : desc;
+                    const link = t.link || '#';
+                    const safeLink = link.startsWith('http') ? link : ('https://' + link);
+                    const domain = (() => {
+                        try { return new URL(safeLink).hostname; } catch { return link; }
+                    })();
+
+                    return `
+                <div class="task-card">
+                    <div class="task-meta">🆔 Job #${t.id} &nbsp;|&nbsp; 📅 ${new Date(t.date).toLocaleString()} &nbsp;|&nbsp; 🌐 ${domain}</div>
+                    <div class="task-desc">${shortDesc.replace(/\n/g, '<br>')}</div>
+                    <div class="task-actions">
+                        <a href="${safeLink}" target="_blank" class="btn-apply">🔗 Open Link to Apply</a>
+                        <button class="btn-extension" onclick="sendToExtension('${safeLink.replace(/'/g, "\\'")}')">🤖 Auto-Fill via Extension</button>
+                        <button class="copy-link" onclick="copyLink('${safeLink.replace(/'/g, "\\'")}')">📋 Copy URL</button>
+                    </div>
+                </div>`;
+                }).join('');
+            } catch (e) {
+                container.innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div>Failed to load tasks. Server may be offline.</div>';
+            }
+        }
+
+        // ─── Send URL to Extension via popup storage ──────────────────────────────
+        function sendToExtension(url) {
+            // Copy URL to clipboard — user can then paste in extension popup
+            navigator.clipboard.writeText(url).then(() => {
+                showToast('📋 URL copied! Paste it in the Extension popup to auto-fill.', 'info');
+            }).catch(() => {
+                showToast('Could not copy URL. Try manually.', 'error');
+            });
+        }
+
+        // ─── Fetch History ─────────────────────────────────────────────────────────
+        async function fetchHistory() {
+            const container = document.getElementById('history-container');
+            try {
+                const res = await fetch('/api/history');
+                const history = await res.json();
+
+                document.getElementById('stat-history').textContent = history.length;
+
+                if (history.length === 0) {
+                    container.innerHTML = '<div class="empty"><div class="empty-icon">📂</div>No history yet.</div>';
+                    return;
+                }
+
+                container.innerHTML = history.map(h => `<div class="history-line">${h}</div>`).join('');
+            } catch (e) {
+                container.innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div>Failed to load history.</div>';
+            }
+        }
+
+        // ─── Init ──────────────────────────────────────────────────────────────────
+        fetchTasks();
+        fetchHistory();
+    </script>
 
 </body>
+
 </html>
