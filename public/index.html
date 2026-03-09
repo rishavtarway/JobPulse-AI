@@ -607,6 +607,41 @@
             color: var(--muted);
         }
 
+        .channel-badge {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .chan-techuprise {
+            background: rgba(59, 130, 246, 0.1);
+            color: #60a5fa;
+            border: 1px solid rgba(59, 130, 246, 0.2);
+        }
+
+        .chan-arsh {
+            background: rgba(239, 68, 68, 0.1);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        .chan-kushal {
+            background: rgba(16, 185, 129, 0.1);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .chan-default {
+            background: rgba(100, 116, 139, 0.1);
+            color: #94a3b8;
+            border: 1px solid rgba(100, 116, 139, 0.2);
+        }
+
         .progress-track {
             display: flex;
             justify-content: space-between;
@@ -931,6 +966,13 @@
                 const currentStatus = statusLabels[app.status] || { name: 'Unknown', idx: 0 };
                 const isFailed = app.status === 'rejected' || app.status === 'no_response';
 
+                // Channel class mapping
+                let chanClass = 'chan-default';
+                const lowerChan = (app.channel || '').toLowerCase();
+                if (lowerChan.includes('techuprise')) chanClass = 'chan-techuprise';
+                else if (lowerChan.includes('arsh')) chanClass = 'chan-arsh';
+                else if (lowerChan.includes('kushal')) chanClass = 'chan-kushal';
+
                 let progressHtml = '';
                 if (!isFailed) {
                     progressHtml = `
@@ -948,7 +990,7 @@
                 return `
                     <div class="task-card tracker-card" onclick="openUpdateModal('${app.id}', '${app.status}', \`${app.notes || ''}\`)">
                         <div class="tracker-info">
-                            <div class="task-meta">${dateStr}</div>
+                            <div class="task-meta">${dateStr} ${app.channel ? `<span class="channel-badge ${chanClass}">${app.channel}</span>` : ''}</div>
                             <h3>${app.company}</h3>
                             <p>${app.role} — <span class="status-${app.status}">${currentStatus.name}</span></p>
                             ${progressHtml}

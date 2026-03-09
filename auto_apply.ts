@@ -75,10 +75,25 @@ if (!OPENROUTER_API_KEY) {
   process.exit(1);
 }
 
-const SEARCH_QUERY = "TechUprise Premium Insider Club";
 const STATE_FILE = 'auto_apply_state.json';
 const NEW_JOBS_FILE = 'latest_jobs_to_apply.json';
 const MASTER_LOG_FILE = 'all_extracted_jobs_log.txt';
+
+const TARGET_CHANNELS = [
+  { id: "-1003338916645", name: "TechUprise Premium" },
+  { id: "-1001511880571", name: "Kushal Vijay Discussion" },
+  { id: "-1001419646388", name: "Arsh Goyal" },
+  { id: "-1002072564530", name: "BNY/Code Divas Exam" },
+  { id: "-1001603220106", name: "Fresher Offcampus Drives" },
+  { id: "-1002146855759", name: "Cognizant Discussion" },
+  { id: "-1001379678738", name: "Kushal Vijay YouTube" },
+  { id: "-1001515619731", name: "Krishan Kumar Jobs" },
+  { id: "-1002117864663", name: "The Latest Jobs 2026" },
+  { id: "-1002322597297", name: "Talentd Job Notifications" },
+  { id: "-1001918258764", name: "TechUprise Exclusive" },
+  { id: "-1001204676886", name: "OffCampus Internship" },
+  { id: "-1001409153549", name: "Daily Jobs Updates" }
+];
 
 // Attachments required for every email
 const ATTACHMENTS = [
@@ -126,23 +141,58 @@ async function authorizeGmail() {
 // ============================================================================
 // 3. TELEGRAM EXTRACTION LOGIC
 // ============================================================================
+// ============================================================================
+// AI JOB FILTERING LOGIC
+// ============================================================================
+async function isRealJobPosting(text: string): Promise<boolean> {
+  // Fast heuristic - if it has an email, it's likely a job or contact info
+  if (text.includes('@') && (text.toLowerCase().includes('hiring') || text.toLowerCase().includes('job') || text.toLowerCase().includes('internship'))) return true;
+
+  // Otherwise, ask AI to filter out clutter
+  const prompt = `Task: Is this a job posting or application link?
+Message: "${text.substring(0, 1000)}"
+Reply ONLY with "YES" if it's a job/internship posting or application form link. 
+Reply ONLY with "NO" if it's general chat, career guidance, spam, or a generic question.`;
+
+  const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+  const fallbackModels = ["google/gemini-2.0-flash:free", "mistralai/mistral-7b-instruct:free"];
+
+  for (const model of fallbackModels) {
+    try {
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "http://localhost:3000",
+          "X-OpenRouter-Title": "Auto Apply Filter"
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const reply = data.choices[0].message.content.trim().toUpperCase();
+        return reply.includes("YES");
+      }
+    } catch (e) {
+      continue;
+    }
+  }
+  return false; // Default to false if AI fails
+}
+
 async function extractNewJobs() {
-  // Read state to find the last fetched ID
-  let lastProcessedId = 0;
+  let state: any = { channelLastIds: {} };
   if (fs.existsSync(STATE_FILE)) {
-    const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
-    lastProcessedId = state.lastMessageId || 0;
+    state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    if (!state.channelLastIds) state.channelLastIds = {};
   }
 
-  if (lastProcessedId === 0) {
-    console.error("⚠️ No lastProcessedId found in state. Please ensure you have run the initial extraction.");
-    // We will default to a recent timestamp to avoid downloading the whole history
-    // Or you can hardcode a specific ID here if needed.
-    console.log("Starting from ID 2306867200 (Vinti Web Solution post) as fallback.");
-    lastProcessedId = 2306867200;
-  }
-
-  console.log(`\n🚀 [PHASE 1] Extracting new jobs since Message ID: ${lastProcessedId}...`);
+  console.log(`\n🚀 [PHASE 1] Extracting new jobs from ${TARGET_CHANNELS.length} channels...`);
 
   // Dynamic Imports for Telegram
   const { TelegramClient } = await import('./src/telegram/client.js');
@@ -156,132 +206,115 @@ async function extractNewJobs() {
     getPassword: requestPasswordFromServer,
   } : undefined);
 
-  const chats = await client.getChats(100);
-  const targetChat = chats.find(c => c.title.toLowerCase().includes(SEARCH_QUERY.toLowerCase()));
+  let allParsedJobs: any[] = [];
+  let allManualJobs: any[] = [];
+  let masterLogAppends = `\n\n--- MULTI-CHANNEL AUTO EXTRACT: ${new Date().toISOString()} ---\n\n`;
 
-  if (!targetChat) {
-    throw new Error(`❌ No chat found matching: "${SEARCH_QUERY}"`);
-  }
+  for (const targetChannel of TARGET_CHANNELS) {
+    console.log(`\n📡 Scanning Channel: ${targetChannel.name} (${targetChannel.id})...`);
 
-  // Force TDLib to sync the chat from the network to avoid stale local cache
-  try {
-    console.log("   Forcing Telegram network sync for this chat...");
-    // @ts-ignore
-    await client.client.invoke({ _: 'openChat', chat_id: parseInt(targetChat.id) });
-    await new Promise(r => setTimeout(r, 2000)); // wait for network sync
-  } catch (e: any) {
-    console.log(`   Sync notice: ${e.message}`);
-  }
+    let lastProcessedId = state.channelLastIds[targetChannel.id] || 2540000000; // Default fallback to process some history
 
-  let newMessages: any[] = [];
-  let lastFetchedId = 0;
-  let keepFetching = true;
-  let fallbackCounter = 0;
+    // Force TDLib to sync the chat
+    try {
+      // @ts-ignore
+      await client.client.invoke({ _: 'openChat', chat_id: parseInt(targetChannel.id) });
+      await new Promise(r => setTimeout(r, 1000));
+    } catch (e) { }
 
-  // To prevent duplicate extraction, we will keep track of IDs we've seen in this session
-  const seenIdsThisSession = new Set<number>();
+    let newMessages: any[] = [];
+    let lastFetchedId = 0;
+    let keepFetching = true;
+    let batchCounter = 0;
+    const seenIds = new Set<number>();
 
-  while (keepFetching && fallbackCounter < 15) {
-    const batch = await client.getMessages(targetChat.id, 100, lastFetchedId);
-    if (!batch || batch.length === 0) break;
+    while (keepFetching && batchCounter < 10) {
+      const batch = await client.getMessages(targetChannel.id, 50, lastFetchedId);
+      if (!batch || batch.length === 0) break;
 
-    let addedInBatch = 0;
-    for (const m of batch) {
-      // STRICT DEDUPLICATION: Only add if its ID is strictly greater than the last processed ID
-      // AND we haven't seen it in this session yet.
-      if (m.id > lastProcessedId && !seenIdsThisSession.has(m.id)) {
-        newMessages.push(m);
-        seenIdsThisSession.add(m.id);
-        addedInBatch++;
+      for (const m of batch) {
+        if (m.id > lastProcessedId && !seenIds.has(m.id)) {
+          newMessages.push(m);
+          seenIds.add(m.id);
+        }
       }
+
+      const oldestInBatch = batch[batch.length - 1];
+      if (lastFetchedId === oldestInBatch.id || oldestInBatch.id <= lastProcessedId) {
+        keepFetching = false;
+      }
+      lastFetchedId = oldestInBatch.id;
+      batchCounter++;
+      process.stdout.write(`   Scanning batch... (Oldest: ${oldestInBatch.id})\r`);
     }
 
-    const oldestInBatch = batch[batch.length - 1];
-
-    // Break if we are stuck in a loop fetching the exact same oldest message
-    if (lastFetchedId === oldestInBatch.id) {
-      break;
+    if (newMessages.length === 0) {
+      console.log(`   ✅ No new messages in ${targetChannel.name}.`);
+      continue;
     }
 
-    lastFetchedId = oldestInBatch.id;
-    fallbackCounter++;
+    console.log(`\n   🔍 Analyzing ${newMessages.length} messages in ${targetChannel.name} with AI...`);
 
-    process.stdout.write(`   Scanning batch... (Oldest ID in batch: ${oldestInBatch.id})\r`);
+    for (const m of newMessages) {
+      const text = m.text || m.mediaCaption || "";
+      if (!text.trim()) continue;
 
-    // If the oldest message we just fetched is older than or equal to our last processed ID,
-    // it means we have successfully traversed back in time far enough and can stop fetching.
-    if (oldestInBatch.id <= lastProcessedId) {
-      keepFetching = false;
-    }
-    await new Promise(r => setTimeout(r, 400));
-  }
+      // 1. Log every message for record
+      masterLogAppends += `[ID:${m.id}] [Chan:${targetChannel.name}] [Date:${new Date(m.date * 1000).toISOString()}] ${text.replace(/\n/g, ' ')}\n\n`;
 
-  // Filter out duplicates (just in case)
-  const uniqueMessages = Array.from(new Map(newMessages.map(m => [m.id, m])).values());
-  uniqueMessages.sort((a, b) => a.id - b.id);
-
-  console.log(`\n✅ Found ${uniqueMessages.length} total new messages in the channel.`);
-
-  if (uniqueMessages.length === 0) {
-    console.log("No new messages to process. Exiting early.");
-    process.exit(0);
-  }
-
-  // Parse out the ones with emails
-  const parsedJobs: { id: string, date: string, text: string, email: string }[] = [];
-  const manualJobs: { id: string, date: string, text: string, link: string }[] = [];
-  let masterLogAppends = `\n\n--- AUTO EXTRACT: ${new Date().toISOString()} ---\n\n`;
-
-  uniqueMessages.forEach(m => {
-    const text = m.text || m.mediaCaption || "";
-    if (text.trim()) {
-      masterLogAppends += `[ID:${m.id}] [Date:${new Date(m.date * 1000).toISOString()}] ${text.replace(/\n/g, ' ')}\n\n`;
-
+      // 2. Multi-level filtering
       const emailMatch = text.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/i);
-
-      // Check for links if no email
       const linkMatch = text.match(/(https?:\/\/[^\s]+)/i);
 
-      if (emailMatch) {
-        parsedJobs.push({
-          id: m.id.toString(),
-          date: new Date(m.date * 1000).toISOString(),
-          text: text,
-          email: emailMatch[1]
-        });
-      } else {
-        // Keep track of all other jobs that don't have emails
-        manualJobs.push({
-          id: m.id.toString(),
-          date: new Date(m.date * 1000).toISOString(),
-          text: text,
-          link: linkMatch ? linkMatch[1] : 'No direct link found'
-        });
+      if (emailMatch || linkMatch) {
+        // Even if it has a link/email, verify it's a real JOB posting and not a user asking a question
+        const isJob = await isRealJobPosting(text);
+        if (!isJob) continue;
+
+        if (emailMatch) {
+          allParsedJobs.push({
+            id: m.id.toString(),
+            channel: targetChannel.name,
+            date: new Date(m.date * 1000).toISOString(),
+            text: text,
+            email: emailMatch[1]
+          });
+        } else if (linkMatch) {
+          allManualJobs.push({
+            id: m.id.toString(),
+            channel: targetChannel.name,
+            date: new Date(m.date * 1000).toISOString(),
+            text: text,
+            link: linkMatch[1]
+          });
+        }
       }
     }
-  });
 
-  // Update master log
+    // Update state for this channel
+    const highestId = Math.max(...newMessages.map(m => m.id));
+    state.channelLastIds[targetChannel.id] = highestId;
+  }
+
+  // Update master files
+  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
   fs.appendFileSync(MASTER_LOG_FILE, masterLogAppends);
 
-  // Create Markdown task list for manual jobs
-  if (manualJobs.length > 0) {
-    let mdContent = `\n\n## Manual Applications Needed (${new Date().toISOString()})\n\n`;
-    manualJobs.forEach(job => {
-      mdContent += `### Job ID: ${job.id} (Posted: ${job.date})\n`;
+  // Handle Manual Jobs Log
+  if (allManualJobs.length > 0) {
+    let mdContent = `\n\n## Multi-Channel Manual Applications (${new Date().toISOString()})\n\n`;
+    allManualJobs.forEach(job => {
+      mdContent += `### [${job.channel}] Job ID: ${job.id}\n`;
       mdContent += `**Apply Here:** [${job.link}](${job.link})\n\n`;
       mdContent += `**Description:**\n> ${job.text.replace(/\n/g, '\n> ')}\n\n`;
       mdContent += `---\n`;
     });
-
     fs.appendFileSync('MANUAL_APPLY_TASKS.md', mdContent);
-    console.log(`\n⚠️ Found ${manualJobs.length} jobs with web/form links instead of emails. Saved to MANUAL_APPLY_TASKS.md for you to review.`);
 
-    // Log Manual Jobs to Tracker
-    for (const job of manualJobs) {
+    // Log to Tracker
+    for (const job of allManualJobs) {
       try {
         const port = process.env.SERVER_PORT || '3000';
-        // Simple company name extraction for links
         let company = "Link Application";
         const urlMatch = job.link.match(/https?:\/\/(?:www\.)?([^./]+)/i);
         if (urlMatch) company = urlMatch[1].charAt(0).toUpperCase() + urlMatch[1].slice(1);
@@ -292,29 +325,24 @@ async function extractNewJobs() {
           body: JSON.stringify({
             company: company,
             role: "Software Engineer",
+            channel: job.channel,
             link: job.link,
             description: job.text,
             status: 'to_apply'
           })
         });
-      } catch (e) { /* ignore log errors */ }
+      } catch (e) { }
     }
   }
 
-  if (parsedJobs.length === 0) {
-    console.log("No new jobs with emails found in the new messages. Updating state and exiting.");
-    fs.writeFileSync(STATE_FILE, JSON.stringify({ lastMessageId: uniqueMessages[uniqueMessages.length - 1].id }, null, 2));
-    process.exit(0);
+  if (allParsedJobs.length === 0) {
+    console.log("No new jobs with emails found. Exiting Phase 1.");
+    return [];
   }
 
-  console.log(`✅ Extracted ${parsedJobs.length} NEW actionable job postings (containing emails).`);
-  fs.writeFileSync(NEW_JOBS_FILE, JSON.stringify(parsedJobs, null, 2));
-
-  // Update state to the absolute latest message ID we saw
-  const newHighestId = uniqueMessages[uniqueMessages.length - 1].id;
-  fs.writeFileSync(STATE_FILE, JSON.stringify({ lastMessageId: newHighestId }, null, 2));
-
-  return parsedJobs;
+  console.log(`✅ Extracted ${allParsedJobs.length} NEW actionable job postings across all channels.`);
+  fs.writeFileSync(NEW_JOBS_FILE, JSON.stringify(allParsedJobs, null, 2));
+  return allParsedJobs;
 }
 
 // ============================================================================
@@ -531,6 +559,7 @@ async function main() {
           body: JSON.stringify({
             company: companyName,
             role: "Software Engineer",
+            channel: job.channel,
             email: job.email,
             description: job.text,
             status: 'applied'
