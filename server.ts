@@ -135,10 +135,69 @@ function writeApps(apps: any[]) {
 // API: Manual Job List (Filtered from Tracker)
 // ============================================================
 app.get('/api/manual-jobs', (req, res) => {
+    // 1. Get from applications.json
     const apps = readApps();
-    const manual = apps.filter((a: any) => a.status === 'to_apply' || a.status === 'manual_review');
-    manual.sort((a: any, b: any) => new Date(b.appliedDate).getTime() - new Date(a.appliedDate).getTime());
-    res.json(manual);
+    const jsonManual = apps.filter((a: any) => a.status === 'to_apply' || a.status === 'manual_review');
+
+    // 2. Also parse from MANUAL_APPLY_TASKS.md (Legacy + Backups)
+    const content = safeReadFile('MANUAL_APPLY_TASKS.md');
+    const legacyTasks: any[] = [];
+    const blocks = content.split('###');
+
+    blocks.forEach(block => {
+        if (!block.trim()) return;
+        const lines = block.trim().split('\n');
+
+        // Match: [Channel] Job ID: 123... or just Job ID: 123
+        const headerMatch = lines[0].match(/(?:\[(.*?)\]\s*)?Job\s*ID:\s*(\d+)/i);
+        if (!headerMatch) return;
+
+        const channel = headerMatch[1] || 'Telegram Group';
+        const telegramId = headerMatch[2];
+        const dateMatch = block.match(/Posted:\s*(.*?)\)/) || block.match(/Need\s*\((.*?)\)/);
+        const date = dateMatch ? dateMatch[1] : '';
+
+        // Extract Link
+        let link = "";
+        const linkMatch = block.match(/\*\*Apply Here:\*\*[^\n]*\(([^)]+)\)/i) || block.match(/(https?:\/\/\S+)/i);
+        if (linkMatch) link = linkMatch[1].replace(/[)\].,]+$/, '');
+
+        // Extract Description
+        const descMatch = block.match(/\*\*Description:\*\*([\s\S]*)/i);
+        let description = descMatch ? descMatch[1].replace(/^>\s*/gm, '').trim() : '';
+        if (description.includes('---')) description = description.split('---')[0].trim();
+
+        legacyTasks.push({
+            id: 'legacy-' + telegramId,
+            telegramId,
+            channel,
+            company: 'Legacy Posting',
+            role: 'Manual Application',
+            link,
+            description,
+            appliedDate: date,
+            status: 'to_apply'
+        });
+    });
+
+    // Merge and Deduplicate by Link (roughly)
+    const combined = [...jsonManual];
+    const seenLinks = new Set(combined.map(a => a.link));
+
+    legacyTasks.forEach(task => {
+        if (!seenLinks.has(task.link)) {
+            combined.push(task);
+            seenLinks.add(task.link);
+        }
+    });
+
+    combined.sort((a: any, b: any) => {
+        const dateA = new Date(a.appliedDate).getTime() || 0;
+        const dateB = new Date(b.appliedDate).getTime() || 0;
+        return dateB - dateA;
+    });
+
+    res.json(combined);
 });
 
 app.get('/api/applications', (req, res) => {

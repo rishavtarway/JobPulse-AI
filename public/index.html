@@ -612,6 +612,10 @@
                 <button class="action-button" id="btn-trigger" onclick="triggerScript()">
                     ✨ FETCH & AUTO-APPLY
                 </button>
+                <button class="action-button" id="btn-stop" onclick="stopScript()"
+                    style="margin-top: 12px; background: rgba(239, 68, 68, 0.1); color: var(--danger); display: none; border: 1px solid rgba(239, 68, 68, 0.2);">
+                    🛑 STOP PROCESS
+                </button>
                 <div style="font-size:11px; text-align:center; color:var(--text-muted); margin-top:12px;">
                     Last Process: <span id="last-run-time">—</span>
                 </div>
@@ -648,7 +652,7 @@
 
             <div class="cyber-tabs">
                 <div class="cyber-tab active" onclick="switchTab('terminal')">Logs</div>
-                <div class="cyber-tab" onclick="switchTab('manual')">Tasks</div>
+                <div class="cyber-tab" onclick="switchTab('manual')">Manual Tasks</div>
                 <div class="cyber-tab" onclick="switchTab('tracker')">Pipeline</div>
             </div>
 
@@ -738,8 +742,10 @@
 
         async function triggerScript() {
             const btn = document.getElementById('btn-trigger');
+            const stopBtn = document.getElementById('btn-stop');
             btn.disabled = true;
             btn.innerHTML = '✨ EXECUTING ENGINE...';
+            stopBtn.style.display = 'flex';
             document.getElementById('terminal').innerHTML = '<b>[System]</b> Spawning worker process...\n';
 
             try {
@@ -748,6 +754,16 @@
             } catch (e) {
                 showToast('Failed to trigger process', 'danger');
                 btn.disabled = false;
+                stopBtn.style.display = 'none';
+            }
+        }
+
+        async function stopScript() {
+            try {
+                await fetch('/api/stop', { method: 'POST' });
+                showToast('Stop signal sent', 'info');
+            } catch (e) {
+                showToast('Failed to stop process', 'danger');
             }
         }
 
@@ -781,6 +797,7 @@
                     clearInterval(pollInterval);
                     document.getElementById('btn-trigger').disabled = false;
                     document.getElementById('btn-trigger').innerHTML = '✨ FETCH & AUTO-APPLY';
+                    document.getElementById('btn-stop').style.display = 'none';
                     fetchApps();
                     fetchManualJobs();
                 }
@@ -850,10 +867,13 @@
                 return `
                     <div class="tracker-item" onclick="openModal('${app.id}', '${app.status}', \`${app.notes || ''}\`)">
                         <div class="tracker-icon">🚀</div>
-                        <div class="tracker-info">
+                        <div class="tracker-info" style="overflow: hidden;">
                             <span class="chan-chip">${app.channel || 'COLD OUTREACH'}</span>
-                            <h3>${app.company}</h3>
-                            <p>${app.role}</p>
+                            <h3 style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${app.company}</h3>
+                            <p style="margin-bottom: 8px;">${app.role}</p>
+                            <p style="font-size: 11px; color: var(--text-muted); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
+                                ${app.description || ''}
+                            </p>
                             <div class="progress-line">
                                 <div class="p-dot ${s.step >= 1 ? 'done' : ''} ${s.step == 1 ? 'current' : ''}"></div>
                                 <div class="p-dot ${s.step >= 2 ? 'done' : ''} ${s.step == 2 ? 'current' : ''}"></div>
@@ -876,16 +896,32 @@
             const jobs = await res.json();
             const container = document.getElementById('manual-tasks-container');
             if (jobs.length === 0) {
-                container.innerHTML = '<div style="text-align:center; padding:60px; color:var(--text-muted)">No manual tasks found.</div>';
+                container.innerHTML = '<div style="text-align:center; padding:60px; color:var(--text-muted)"><div style="font-size:32px; margin-bottom:12px;">📂</div>No manual links found in the current session.</div>';
                 return;
             }
-            container.innerHTML = jobs.map(j => `
-                <div class="glass-card">
-                    <span class="chan-chip">${j.channel}</span>
-                    <h3 style="font-family:var(--font-heading); margin-bottom:8px;">${j.company || 'Unknown Company'}</h3>
-                    <p style="font-size:13px; color:var(--text-secondary); margin-bottom:20px;">${j.text.substring(0, 150)}...</p>
-                    <a href="${j.link}" target="_blank" class="action-button" style="background:var(--accent-bright); color:#fff; text-decoration:none;">OPEN APPLICATION LINK</a>
-                </div>
+
+            // Group by channel
+            const grouped = {};
+            jobs.forEach(j => {
+                const chan = j.channel || 'Telegram Group';
+                if (!grouped[chan]) grouped[chan] = [];
+                grouped[chan].push(j);
+            });
+
+            container.innerHTML = Object.entries(grouped).map(([channel, channelJobs]) => `
+                <div class="section-label" style="margin: 20px 0 10px 8px; color: var(--text-secondary)">${channel}</div>
+                ${channelJobs.map(j => `
+                    <div class="glass-card" style="padding: 24px; margin-bottom: 12px;">
+                        <h3 style="font-family:var(--font-heading); margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; font-size: 18px;">
+                            ${j.company || 'Action Required'}
+                            <span class="chan-chip" style="margin:0">${j.status === 'manual_review' ? 'Review Needed' : 'Form Link'}</span>
+                        </h3>
+                        <p style="font-size:13px; color:var(--text-secondary); margin-bottom:20px; color: var(--text-muted); line-height: 1.6;">
+                            ${(j.description || j.text || 'No description available').replace(/\n/g, '<br>')}
+                        </p>
+                        <a href="${j.link}" target="_blank" class="action-button" style="background:var(--accent-bright); color:#fff; text-decoration:none;">OPEN APPLICATION PORTAL</a>
+                    </div>
+                `).join('')}
             `).join('');
         }
 
