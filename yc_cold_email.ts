@@ -132,8 +132,13 @@ async function callAI(prompt: string, expectJson: boolean = false): Promise<any>
         return null;
     }
 
-    // Using more stable generic fallback models for OpenRouter free tier
-    const fallbackModels = ["openrouter/free", "google/gemma-3-27b-it:free", "mistralai/mistral-7b-instruct:free", "meta-llama/llama-3.2-1b-instruct:free"];
+    // Using highly reliable fallback models for OpenRouter free tier (Gemini, Llama)
+    const fallbackModels = [
+        "google/gemini-2.0-flash-lite-preview-02-05:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "google/gemma-3-27b-it:free",
+        "openrouter/free"
+    ];
 
     let currentModelIdx = 0;
     while (currentModelIdx < fallbackModels.length) {
@@ -188,7 +193,7 @@ async function deepResearchCompany(company: string, originalMission: string): Pr
 
     const search1 = await searchWeb(`${company} startup founders YC mission problems solving funding`);
     await new Promise(r => setTimeout(r, 1000)); // be nice to DDG
-    const search2 = await searchWeb(`"${company}" startup founder CEO email contact careers hiring "founders@"`);
+    const search2 = await searchWeb(`${company} startup founder CEO email contact careers hiring founders@`);
 
     const combinedSnippets = [...search1, ...search2].map(s => `Title: ${s.title}\nSnippet: ${s.snippet}\nLink: ${s.link}`).join("\n\n");
     const uniqueLinks = [...new Set([...search1, ...search2].map(s => s.link))];
@@ -198,7 +203,8 @@ async function deepResearchCompany(company: string, originalMission: string): Pr
 Search Results:
 ${combinedSnippets}
 
-Extract the following as a JSON object strictly following this format:
+Extract the following as a JSON object strictly following this format. IF YOU CANNOT FIND A VALUE, RETURN AN EMPTY STRING "". DO NOT WRITE "N/A" OR "NOT FOUND"!
+
 {
   "founder_names": "Names of founders (or 'Team') - attempt to find their exact names.",
   "contact_email": "Find the DIRECT founder email. DO NOT use generic info@ or hello@ emails. Look for founders@, careers@, jobs@, or actively deduce it using the founder's first name (e.g., firstname@companydomain.com) if you found the domain and founder name. Leave blank if totally unsure.",
@@ -209,7 +215,10 @@ Extract the following as a JSON object strictly following this format:
     let parsed = await callAI(prompt, true) || {};
 
     let discoveredEmail = parsed.contact_email || "";
-    let founders = parsed.founder_names || "Founding Team";
+    let founders = parsed.founder_names || "";
+    if (founders.toLowerCase().includes("n/a") || founders.toLowerCase().includes("not found")) founders = "";
+    if (!founders) founders = "Founding Team";
+    if (discoveredEmail.toLowerCase().includes("n/a") || discoveredEmail.toLowerCase().includes("not found")) discoveredEmail = "";
 
     // Deep fallback search for email if not found in first pass, but founder is known
     if ((!discoveredEmail || discoveredEmail.includes('info@') || discoveredEmail.includes('hello@') || discoveredEmail.length < 5) && founders !== "Founding Team" && founders.length > 2) {
