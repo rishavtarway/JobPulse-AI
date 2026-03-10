@@ -21,8 +21,8 @@ loadEnv();
 const TOKEN_PATH = 'token.json';
 const CREDENTIALS_PATH = 'credential.json';
 const ATTACHMENTS = [{
-    filename: 'Rishav_Tarway_Resume.pdf',
-    path: path.join(process.cwd(), 'resume', 'Rishav_Tarway_Resume.pdf')
+    filename: 'RishavTarway-Resume.pdf',
+    path: path.join(process.cwd(), 'RishavTarway-Resume.pdf')
 }];
 const LOGS_FILE = 'YC_RESEARCH_AGENT_LOGS.md';
 
@@ -52,8 +52,13 @@ class MailComposer {
                         if (err) return reject(err);
                         if (Buffer.isBuffer(info.message)) return resolve(info.message);
                         const chunks: any[] = [];
-                        (info.message as any).on('data', (chunk: any) => chunks.push(chunk));
-                        (info.message as any).on('end', () => resolve(Buffer.concat(chunks)));
+                        if (info.message && typeof (info.message as any).on === 'function') {
+                            (info.message as any).on('data', (chunk: any) => chunks.push(chunk));
+                            (info.message as any).on('end', () => resolve(Buffer.concat(chunks)));
+                            (info.message as any).on('error', (err: any) => reject(err));
+                        } else {
+                            reject(new Error("No message stream returned from nodemailer"));
+                        }
                     });
                 });
             }
