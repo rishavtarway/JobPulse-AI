@@ -137,11 +137,11 @@ async function callAI(prompt: string, expectJson: boolean = false): Promise<any>
         return null;
     }
 
-    // Using highly reliable fallback models for OpenRouter free tier (Gemini, Llama)
+    // Using the most robust free models available on OpenRouter
     const fallbackModels = [
-        "google/gemini-2.0-flash-lite-preview-02-05:free",
-        "meta-llama/llama-3.3-70b-instruct:free",
-        "google/gemma-3-27b-it:free",
+        "google/gemini-flash-1.5",
+        "meta-llama/llama-3.1-8b-instruct",
+        "openai/gpt-3.5-turbo",
         "openrouter/free"
     ];
 
@@ -160,7 +160,10 @@ async function callAI(prompt: string, expectJson: boolean = false): Promise<any>
                 console.log(`   ⚠️ Rate limited on ${fallbackModels[currentModelIdx]}, switching models...`);
                 currentModelIdx++; continue;
             }
-            if (!response.ok) throw new Error(`API error: ${response.status}`);
+            if (!response.ok) {
+                const errText = await response.text();
+                throw new Error(`API error: ${response.status} - ${errText}`);
+            }
 
             const result = await response.json();
             const text = result.choices[0].message.content;
@@ -183,7 +186,9 @@ async function callAI(prompt: string, expectJson: boolean = false): Promise<any>
             try {
                 return JSON.parse(jsonString);
             } catch (je) {
-                return JSON.parse(content);
+                // Second attempt: clean markdown formatting more aggressively
+                const cleaner = jsonString.replace(/```json/g, '').replace(/```/g, '').trim();
+                try { return JSON.parse(cleaner); } catch (je2) { throw new Error("Invalid JSON returned"); }
             }
         } catch (e: any) {
             console.log(`   ⚠️ Model failed (${e.message}), trying next...`);
@@ -193,8 +198,34 @@ async function callAI(prompt: string, expectJson: boolean = false): Promise<any>
     return null;
 }
 
-async function deepResearchCompany(company: string, originalMission: string): Promise<any> {
+// --- PAGE CONTENT SCRAPER ---
+async function fetchPageContent(url: string): Promise<string> {
+    if (!url) return "";
+    try {
+        const response = await fetch(url, {
+            headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36" },
+            signal: AbortSignal.timeout(10000)
+        });
+        const text = await response.text();
+        // Strip script/style tags and return first 4k chars of body
+        return text.replace(/<script[\s\S]*?<\/script>/gi, '')
+            .replace(/<style[\s\S]*?<\/style>/gi, '')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .substring(0, 4000);
+    } catch (e) {
+        return "";
+    }
+}
+
+async function deepResearchCompany(company: string, originalMission: string, careerUrl?: string): Promise<any> {
     console.log(`\n🔍 Agent searching deep web for: ${company}...`);
+
+    let careerPageText = "";
+    if (careerUrl) {
+        console.log(`   🌐 Fetching career page: ${careerUrl}...`);
+        careerPageText = await fetchPageContent(careerUrl);
+    }
 
     const search1 = await searchWeb(`${company} startup founders YC mission problems solving funding`);
     await new Promise(r => setTimeout(r, 1000)); // be nice to DDG
@@ -202,10 +233,14 @@ async function deepResearchCompany(company: string, originalMission: string): Pr
 
     const combinedSnippets = [...search1, ...search2].map(s => `Title: ${s.title}\nSnippet: ${s.snippet}\nLink: ${s.link}`).join("\n\n");
     const uniqueLinks = [...new Set([...search1, ...search2].map(s => s.link))];
+    if (careerUrl) uniqueLinks.unshift(careerUrl);
 
-    const prompt = `Analyze the search results for the startup "${company}" and extract precise information.
+    const prompt = `Analyze the search results and career page content for the startup "${company}" and extract precise information.
 
-Search Results:
+Career Page Content (Snippet):
+${careerPageText}
+
+Web Search Results:
 ${combinedSnippets}
 
 Extract the following as a JSON object strictly following this format. IF YOU CANNOT FIND A VALUE, RETURN AN EMPTY STRING "". DO NOT WRITE "N/A" OR "NOT FOUND"!
@@ -296,7 +331,7 @@ STRICT RULES:
 async function parseRawStartupsInput(text: string): Promise<any[]> {
     const prompt = `Extract a list of startups from the following text. 
 Return ONLY a valid JSON array of objects. 
-Each object must have exactly these keys: "company" (string), "email" (string, leave blank if missing), "context" (string, short summary of what they do, if available).
+Each object must have exactly these keys: "company" (string), "email" (string, leave blank if missing), "context" (string, short summary), "career_url" (string, found career/jobs links).
 
 Text input:
 ${text}`;
@@ -345,14 +380,14 @@ async function main() {
     let mdLog = `\n\n## YC Research Agent Run - ${new Date().toISOString()}\n`;
 
     for (let i = 0; i < startups.length; i++) {
-        let { company, email, context } = startups[i];
+        let { company, email, context, career_url } = startups[i];
         if (!company) continue;
 
         console.log(`\n-------------------------------------------------------------`);
         console.log(`[${i + 1}/${startups.length}] 🧠 Commencing Deep Research Agent for: ${company}`);
 
         // 1. Deep Research
-        const research = await deepResearchCompany(company, context);
+        const research = await deepResearchCompany(company, context, career_url);
         console.log(`   💡 Found Founders: ${research.founders}`);
         console.log(`   💡 Found Mission: ${research.deepMission}`);
 
