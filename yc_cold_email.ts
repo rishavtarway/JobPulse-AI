@@ -206,11 +206,38 @@ Extract the following as a JSON object strictly following this format:
   "tech_stack_or_values": "What technologies they seem to use, or what engineering traits they value."
 }`;
 
-    const parsed = await callAI(prompt, true) || {};
+    let parsed = await callAI(prompt, true) || {};
+
+    let discoveredEmail = parsed.contact_email || "";
+    let founders = parsed.founder_names || "Founding Team";
+
+    // Deep fallback search for email if not found in first pass, but founder is known
+    if ((!discoveredEmail || discoveredEmail.includes('info@') || discoveredEmail.includes('hello@') || discoveredEmail.length < 5) && founders !== "Founding Team" && founders.length > 2) {
+        console.log(`   🕵️‍♂️ Doing deeper targeted scan for ${founders}'s exact email...`);
+        const search3 = await searchWeb(`"${founders}" "${company}" "@" email contact`);
+        const snippets3 = search3.map(s => `Title: ${s.title}\nSnippet: ${s.snippet}\nLink: ${s.link}`).join("\n\n");
+        const uniqueLinks3 = [...new Set(search3.map(s => s.link))];
+        uniqueLinks.push(...uniqueLinks3);
+
+        const emailPrompt = `Analyze these deep search results and find the exact email for ${founders} at ${company}.
+        
+Search Results:
+${snippets3}
+
+Return ONLY a JSON object:
+{ "contact_email": "exact_email_or_blank" }
+Ignore info@ or support@. We want founders@, careers@, or name@domain.com.`;
+
+        const emailParsed = await callAI(emailPrompt, true) || {};
+        if (emailParsed.contact_email && !emailParsed.contact_email.includes('info@')) {
+            discoveredEmail = emailParsed.contact_email;
+            console.log(`   🎯 Deep scan successful: Found ${discoveredEmail}`);
+        }
+    }
 
     return {
-        founders: parsed.founder_names || "Founding Team",
-        discoveredEmail: parsed.contact_email || "",
+        founders: founders,
+        discoveredEmail: discoveredEmail,
         deepMission: parsed.deep_mission || originalMission || "Building high scale technology.",
         techStack: parsed.tech_stack_or_values || "software engineering",
         sources: uniqueLinks
