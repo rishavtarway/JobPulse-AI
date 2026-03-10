@@ -4,250 +4,291 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Auto-Apply Dashboard — Rishav Tarway</title>
+    <title>JobPulse AI — Premium Cold Outreach</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
     <style>
         :root {
-            --bg: #080c14;
-            --surface: #0f1623;
-            --card: #141e2e;
-            --border: #1e2d42;
-            --accent: #3b82f6;
-            --accent-glow: rgba(59, 130, 246, 0.2);
-            --accent-hover: #2563eb;
-            --success: #10b981;
-            --warning: #f59e0b;
+            --bg: #020617;
+            --surface: rgba(15, 23, 42, 0.6);
+            --card: rgba(30, 41, 59, 0.4);
+            --card-hover: rgba(30, 41, 59, 0.7);
+            --border: rgba(255, 255, 255, 0.05);
+            --border-hover: rgba(255, 255, 255, 0.12);
+            --accent: #818cf8;
+            --accent-bright: #6366f1;
+            --secondary: #2dd4bf;
             --danger: #ef4444;
-            --text: #e2e8f0;
-            --muted: #64748b;
-            --green: #00ff88;
+            --success: #10b981;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --text-muted: #475569;
+            --font-main: 'Plus Jakarta Sans', sans-serif;
+            --font-heading: 'Outfit', sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+            --noise: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
         }
 
         * {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
+            -webkit-font-smoothing: antialiased;
         }
 
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: var(--font-main);
             background: var(--bg);
-            color: var(--text);
+            color: var(--text-primary);
             min-height: 100vh;
-            padding: 0;
+            line-height: 1.6;
+            overflow-x: hidden;
+            position: relative;
         }
 
-        /* Header */
+        body::before {
+            content: "";
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: var(--noise);
+            opacity: 0.03;
+            pointer-events: none;
+            z-index: 10000;
+        }
+
+        .bg-mesh {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background:
+                radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 0%, rgba(45, 212, 191, 0.1) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(236, 72, 153, 0.08) 0px, transparent 50%),
+                radial-gradient(at 0% 100%, rgba(20, 184, 166, 0.1) 0px, transparent 50%);
+            z-index: -1;
+            filter: blur(80px);
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-hover);
+            border-radius: 10px;
+        }
+
         .header {
-            background: linear-gradient(135deg, #0a1628 0%, #0f2040 100%);
+            background: rgba(2, 6, 23, 0.8);
+            backdrop-filter: blur(12px) saturate(180%);
             border-bottom: 1px solid var(--border);
-            padding: 16px 24px;
+            padding: 16px 32px;
             display: flex;
             align-items: center;
             justify-content: space-between;
             position: sticky;
             top: 0;
-            z-index: 100;
-            backdrop-filter: blur(10px);
+            z-index: 2000;
         }
 
-        .header-left {
+        .header-brand {
             display: flex;
             align-items: center;
             gap: 12px;
         }
 
-        .logo {
-            width: 36px;
-            height: 36px;
-            background: linear-gradient(135deg, var(--accent), #8b5cf6);
-            border-radius: 10px;
+        .logo-sphere {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--accent-bright), var(--secondary));
+            border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 18px;
+            font-size: 16px;
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
         }
 
         .header h1 {
+            font-family: var(--font-heading);
             font-size: 18px;
             font-weight: 700;
+            letter-spacing: -0.025em;
+            background: linear-gradient(to right, #fff, var(--text-secondary));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
 
-        .header-badge {
-            font-size: 11px;
-            background: rgba(59, 130, 246, 0.15);
-            color: var(--accent);
-            border: 1px solid rgba(59, 130, 246, 0.3);
-            padding: 3px 10px;
-            border-radius: 20px;
-            font-weight: 600;
-        }
-
-        .container {
-            max-width: 900px;
+        .page-wrapper {
+            max-width: 1200px;
             margin: 0 auto;
-            padding: 24px 20px;
+            padding: 40px 24px;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 32px;
+            animation: fadeIn 0.8s ease-out;
         }
 
-        /* Main trigger button */
-        .trigger-btn {
-            width: 100%;
-            padding: 16px;
-            background: linear-gradient(135deg, var(--accent), #2563eb);
-            color: white;
-            border: none;
-            border-radius: 12px;
-            font-size: 16px;
-            font-weight: 700;
-            cursor: pointer;
-            transition: all 0.2s;
-            margin-bottom: 20px;
-            letter-spacing: 0.3px;
-            box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
-        }
-
-        .trigger-btn:hover:not(:disabled) {
-            transform: translateY(-1px);
-            box-shadow: 0 0 30px rgba(59, 130, 246, 0.5);
-        }
-
-        .trigger-btn:disabled {
-            background: var(--card);
-            color: var(--muted);
-            box-shadow: none;
-            cursor: not-allowed;
-        }
-
-        /* OTP Alert Box */
-        #otp-box {
-            display: none;
-            background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.05));
-            border: 1px solid rgba(245, 158, 11, 0.4);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
-            animation: pulseWarning 2s infinite;
-        }
-
-        #otp-box.active {
-            display: block;
-        }
-
-        #password-box {
-            display: none;
-            background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.05));
-            border: 1px solid rgba(139, 92, 246, 0.4);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
-        }
-
-        #password-box.active {
-            display: block;
-        }
-
-        @keyframes pulseWarning {
-
-            0%,
-            100% {
-                border-color: rgba(245, 158, 11, 0.4);
+        @media (min-width: 1024px) {
+            .page-wrapper {
+                grid-template-columns: 320px 1fr;
+                align-items: start;
             }
 
-            50% {
-                border-color: rgba(245, 158, 11, 0.8);
-                box-shadow: 0 0 15px rgba(245, 158, 11, 0.2);
+            .sidebar-sticky {
+                position: sticky;
+                top: 100px;
             }
         }
 
-        .otp-title {
-            font-size: 14px;
-            font-weight: 700;
-            color: var(--warning);
-            margin-bottom: 8px;
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
-        .otp-desc {
-            font-size: 13px;
-            color: var(--muted);
-            margin-bottom: 14px;
+        .glass-card {
+            background: var(--surface);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 28px;
+            margin-bottom: 24px;
+            transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
         }
 
-        .otp-row {
+        .glass-card:hover {
+            border-color: var(--border-hover);
+        }
+
+        .section-label {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: var(--accent);
+            margin-bottom: 20px;
             display: flex;
+            align-items: center;
             gap: 10px;
         }
 
-        .otp-input {
-            flex: 1;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 12px 16px;
-            color: var(--text);
-            font-size: 20px;
-            font-family: 'JetBrains Mono', monospace;
-            font-weight: 600;
-            letter-spacing: 8px;
-            text-align: center;
-            outline: none;
-            transition: border-color 0.2s;
+        .section-label::after {
+            content: "";
+            height: 1px;
+            flex-grow: 1;
+            background: linear-gradient(90deg, var(--border-hover), transparent);
         }
 
-        .otp-input:focus {
-            border-color: var(--warning);
-        }
-
-        .otp-submit {
-            background: var(--warning);
+        .action-button {
+            width: 100%;
+            padding: 16px;
+            background: #fff;
             color: #000;
             border: none;
-            border-radius: 8px;
-            padding: 12px 20px;
-            font-size: 14px;
+            border-radius: 12px;
+            font-family: var(--font-heading);
+            font-size: 15px;
             font-weight: 700;
             cursor: pointer;
-            transition: opacity 0.2s;
-            white-space: nowrap;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
         }
 
-        .otp-submit:hover {
-            opacity: 0.85;
+        .action-button:hover:not(:disabled) {
+            background: var(--accent-bright);
+            color: #fff;
+            box-shadow: 0 10px 20px -5px rgba(99, 102, 241, 0.5);
         }
 
-        /* Tabs */
-        .tabs {
+        .action-button:disabled {
+            background: var(--text-muted);
+            opacity: 0.5;
+            color: #fff;
+            cursor: not-allowed;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 24px;
+        }
+
+        .stat-pill {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 16px;
+            text-align: center;
+        }
+
+        .stat-val {
+            font-family: var(--font-heading);
+            font-size: 24px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        .cyber-tabs {
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 5px;
             display: flex;
             gap: 4px;
-            margin-bottom: 20px;
-            background: var(--card);
-            border-radius: 12px;
-            padding: 4px;
+            margin: 24px 0;
         }
 
-        .tab {
+        .cyber-tab {
             flex: 1;
             padding: 10px;
-            text-align: center;
-            border-radius: 8px;
-            cursor: pointer;
+            font-size: 12px;
             font-weight: 600;
-            font-size: 13px;
-            color: var(--muted);
-            transition: all 0.2s;
+            color: var(--text-muted);
+            border-radius: 10px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.25s;
         }
 
-        .tab:hover {
-            color: var(--text);
+        .cyber-tab:hover {
+            color: var(--text-secondary);
+        }
+
+        .cyber-tab.active {
             background: var(--surface);
-        }
-
-        .tab.active {
-            background: var(--accent);
-            color: white;
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border);
         }
 
         .tab-content {
@@ -258,755 +299,597 @@
             display: block;
         }
 
-        /* Cards */
-        .card {
+        .terminal-container {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 24px;
+            height: 500px;
+            overflow-y: auto;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            line-height: 1.8;
+            color: #cbd5e1;
+        }
+
+        .terminal-container b {
+            color: var(--secondary);
+            font-weight: 500;
+        }
+
+        .terminal-container i {
+            color: var(--accent);
+            font-style: normal;
+        }
+
+        .tracker-item {
             background: var(--card);
             border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
-        }
-
-        .card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 16px;
-        }
-
-        .card-title {
-            font-size: 14px;
-            font-weight: 700;
-            color: var(--text);
-        }
-
-        .badge {
-            font-size: 11px;
-            padding: 3px 10px;
             border-radius: 20px;
-            font-weight: 600;
-        }
-
-        .badge-running {
-            background: rgba(16, 185, 129, 0.15);
-            color: var(--success);
-            border: 1px solid rgba(16, 185, 129, 0.3);
-        }
-
-        .badge-idle {
-            background: rgba(100, 116, 139, 0.15);
-            color: var(--muted);
-            border: 1px solid rgba(100, 116, 139, 0.3);
-        }
-
-        .badge-warning {
-            background: rgba(245, 158, 11, 0.15);
-            color: var(--warning);
-            border: 1px solid rgba(245, 158, 11, 0.3);
-        }
-
-        .refresh-btn {
-            background: var(--surface);
-            color: var(--muted);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 6px 14px;
-            font-size: 12px;
-            font-weight: 600;
+            padding: 24px;
+            margin-bottom: 16px;
             cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .refresh-btn:hover {
-            color: var(--accent);
-            border-color: var(--accent);
-        }
-
-        /* Terminal */
-        #terminal {
-            background: #000;
-            color: var(--green);
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 12.5px;
-            padding: 16px;
-            border-radius: 8px;
-            height: 360px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            line-height: 1.6;
-            border: 1px solid #0d1f0d;
-        }
-
-        #terminal::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        #terminal::-webkit-scrollbar-track {
-            background: #000;
-        }
-
-        #terminal::-webkit-scrollbar-thumb {
-            background: #1a3d1a;
-            border-radius: 3px;
-        }
-
-        /* Task Cards */
-        .task-card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-left: 3px solid var(--accent);
-            border-radius: 8px;
-            padding: 16px;
-            margin-bottom: 14px;
-            transition: border-color 0.2s;
-        }
-
-        .task-card:hover {
-            border-left-color: #60a5fa;
-        }
-
-        .task-meta {
-            font-size: 11px;
-            color: var(--muted);
-            margin-bottom: 10px;
-            font-family: 'JetBrains Mono', monospace;
-        }
-
-        .task-desc {
-            font-size: 13px;
-            color: var(--text);
-            line-height: 1.6;
-            margin-bottom: 14px;
-            max-height: 100px;
-            overflow: hidden;
+            transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
             position: relative;
         }
 
-        .task-desc.expandable::after {
-            content: '';
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            height: 30px;
-            background: linear-gradient(transparent, var(--surface));
+        @media (min-width: 640px) {
+            .tracker-item {
+                grid-template-columns: auto 1fr auto;
+                align-items: center;
+                gap: 24px;
+            }
         }
 
-        .task-actions {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
+        .tracker-item:hover {
+            border-color: var(--border-hover);
+            background: var(--card-hover);
         }
 
-        .btn-apply {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            background: var(--success);
-            color: white;
-            text-decoration: none;
-            padding: 8px 16px;
-            border-radius: 8px;
-            font-size: 12px;
-            font-weight: 700;
-            transition: opacity 0.2s;
+        @keyframes slideUpFade {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
-        .btn-apply:hover {
-            opacity: 0.85;
-        }
-
-        .btn-extension {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            background: var(--surface);
-            border: 1px solid var(--accent);
-            color: var(--accent);
-            padding: 8px 16px;
-            border-radius: 8px;
-            font-size: 12px;
-            font-weight: 700;
-            cursor: pointer;
-            transition: all 0.2s;
-            text-decoration: none;
-        }
-
-        .btn-extension:hover {
-            background: var(--accent-glow);
-        }
-
-        .copy-link {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            background: transparent;
-            border: 1px solid var(--border);
-            color: var(--muted);
-            padding: 8px 12px;
-            border-radius: 8px;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .copy-link:hover {
-            color: var(--text);
-            border-color: var(--muted);
-        }
-
-        /* History */
-        .history-line {
-            font-size: 12px;
-            font-family: 'JetBrains Mono', monospace;
-            color: var(--muted);
-            border-bottom: 1px solid var(--border);
-            padding: 10px 0;
-            line-height: 1.5;
-        }
-
-        .history-line:last-child {
-            border-bottom: none;
-        }
-
-        /* Stats bar */
-        .stats-bar {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 20px;
-        }
-
-        .stat-pill {
-            background: var(--card);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 12px 16px;
-            flex: 1;
-            text-align: center;
-        }
-
-        .stat-num {
-            font-size: 22px;
-            font-weight: 700;
-            color: var(--accent);
-        }
-
-        .stat-label {
-            font-size: 11px;
-            color: var(--muted);
-            margin-top: 2px;
-        }
-
-        /* Toast */
-        .toast {
-            position: fixed;
-            bottom: 24px;
-            right: 24px;
-            background: var(--card);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 12px 20px;
-            font-size: 13px;
-            font-weight: 600;
+        .fade-stagger>* {
             opacity: 0;
-            transform: translateY(10px);
-            transition: all 0.3s;
-            z-index: 999;
+            animation: slideUpFade 0.8s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+        }
+
+        .fade-stagger>*:nth-child(1) {
+            animation-delay: 0.1s;
+        }
+
+        .fade-stagger>*:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .fade-stagger>*:nth-child(3) {
+            animation-delay: 0.3s;
+        }
+
+        .fade-stagger>*:nth-child(4) {
+            animation-delay: 0.4s;
+        }
+
+        .glass-card::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(255, 255, 255, 0.06) 0%, transparent 60%);
+            opacity: 0;
+            transition: opacity 0.3s;
             pointer-events: none;
         }
 
-        .toast.show {
+        .glass-card:hover::after {
             opacity: 1;
-            transform: translateY(0);
         }
 
-        .toast.success {
-            border-color: rgba(16, 185, 129, 0.5);
-            color: var(--success);
-        }
-
-        .toast.error {
-            border-color: rgba(239, 68, 68, 0.5);
-            color: var(--danger);
-        }
-
-        .toast.info {
-            border-color: rgba(59, 130, 246, 0.5);
-            color: var(--accent);
-        }
-
-        /* Empty states */
-        .empty {
-            text-align: center;
-            padding: 40px 20px;
-            color: var(--muted);
-            font-size: 14px;
-        }
-
-        .empty-icon {
-            font-size: 36px;
-            margin-bottom: 10px;
-        }
-
-        /* Pulse dot */
-        .pulse-dot {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: var(--success);
-            margin-right: 6px;
-            animation: pulse 1.5s ease-in-out infinite;
-        }
-
-        @keyframes pulse {
-
-            0%,
-            100% {
-                opacity: 1;
-                transform: scale(1);
-            }
-
-            50% {
-                opacity: 0.5;
-                transform: scale(0.8);
-            }
-        }
-
-        /* Tracker Specific */
-        .status-to_apply {
-            color: #38bdf8;
-        }
-
-        .status-applied {
-            color: var(--accent);
-        }
-
-        .status-intro_call {
-            color: #8b5cf6;
-        }
-
-        .status-technical_round {
-            color: #f59e0b;
-        }
-
-        .status-hr_round {
-            color: #ec4899;
-        }
-
-        .status-offered {
-            color: var(--success);
-        }
-
-        .status-rejected {
-            color: var(--danger);
-        }
-
-        .status-no_response {
-            color: var(--muted);
-        }
-
-        .channel-badge {
-            display: inline-block;
-            font-size: 10px;
+        .btn-link {
+            background: linear-gradient(135deg, var(--accent-bright), var(--accent));
+            color: #fff;
+            padding: 12px 24px;
+            border-radius: 12px;
             font-weight: 700;
-            padding: 2px 8px;
-            border-radius: 4px;
-            margin-bottom: 6px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .chan-techuprise {
-            background: rgba(59, 130, 246, 0.1);
-            color: #60a5fa;
-            border: 1px solid rgba(59, 130, 246, 0.2);
-        }
-
-        .chan-arsh {
-            background: rgba(239, 68, 68, 0.1);
-            color: #f87171;
-            border: 1px solid rgba(239, 68, 68, 0.2);
-        }
-
-        .chan-kushal {
-            background: rgba(16, 185, 129, 0.1);
-            color: #34d399;
-            border: 1px solid rgba(16, 185, 129, 0.2);
-        }
-
-        .chan-default {
-            background: rgba(100, 116, 139, 0.1);
-            color: #94a3b8;
-            border: 1px solid rgba(100, 116, 139, 0.2);
-        }
-
-        .progress-track {
-            display: flex;
-            justify-content: space-between;
-            margin: 15px 0;
-            position: relative;
-        }
-
-        .progress-track::before {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 0;
-            right: 0;
-            height: 2px;
-            background: var(--border);
-            z-index: 0;
-            transform: translateY(-50%);
-        }
-
-        .step {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: var(--border);
-            z-index: 1;
-            position: relative;
-        }
-
-        .step.active {
-            background: var(--accent);
-            box-shadow: 0 0 10px var(--accent-glow);
-        }
-
-        .step.completed {
-            background: var(--success);
-        }
-
-        .tracker-card {
-            display: grid;
-            grid-template-columns: 1fr auto;
-            gap: 15px;
+            font-family: var(--font-heading);
+            text-decoration: none;
+            display: inline-flex;
             align-items: center;
+            gap: 10px;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .btn-link:hover {
+            transform: scale(1.03);
+            box-shadow: 0 8px 25px rgba(99, 102, 241, 0.5);
+        }
+
+        .tracker-icon {
+            width: 48px;
+            height: 48px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
         }
 
         .tracker-info h3 {
-            font-size: 16px;
-            margin-bottom: 4px;
+            font-family: var(--font-heading);
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 2px;
         }
 
         .tracker-info p {
             font-size: 13px;
-            color: var(--muted);
+            color: var(--text-secondary);
+        }
+
+        .status-badge {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 4px 12px;
+            border-radius: 30px;
+            text-transform: capitalize;
+        }
+
+        .st-applied {
+            background: rgba(129, 140, 248, 0.1);
+            color: #818cf8;
+            border: 1px solid rgba(129, 140, 248, 0.2);
+        }
+
+        .st-to_apply {
+            background: rgba(45, 212, 191, 0.1);
+            color: #2dd4bf;
+            border: 1px solid rgba(45, 212, 191, 0.2);
+        }
+
+        .st-technical_round {
+            background: rgba(245, 158, 11, 0.1);
+            color: #f59e0b;
+            border: 1px solid rgba(245, 158, 11, 0.2);
+        }
+
+        .progress-line {
+            display: flex;
+            gap: 6px;
+            margin-top: 12px;
+        }
+
+        .p-dot {
+            height: 4px;
+            flex: 1;
+            background: var(--border);
+            border-radius: 4px;
+            transition: all 0.6s;
+        }
+
+        .p-dot.done {
+            background: var(--accent);
+            opacity: 0.5;
+        }
+
+        .p-dot.current {
+            background: var(--accent);
+            box-shadow: 0 0 10px var(--accent);
+        }
+
+        .chan-chip {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            color: var(--accent);
+            opacity: 0.7;
+            margin-bottom: 4px;
+            display: inline-block;
+        }
+
+        /* OTP Elements */
+        #otp-box,
+        #password-box {
+            display: none;
+            background: rgba(245, 158, 11, 0.05);
+            border: 1px solid rgba(245, 158, 11, 0.2);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 24px;
+            animation: pulseWarning 2s infinite;
+        }
+
+        @keyframes pulseWarning {
+
+            0%,
+            100% {
+                border-color: rgba(245, 158, 11, 0.2);
+            }
+
+            50% {
+                border-color: rgba(245, 158, 11, 0.5);
+            }
+        }
+
+        .otp-input {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 12px;
+            color: #fff;
+            font-family: var(--font-mono);
+            font-size: 18px;
+            text-align: center;
+            margin: 12px 0;
+            outline: none;
+        }
+
+        .otp-input:focus {
+            border-color: var(--accent);
         }
 
         .modal {
-            display: none;
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            inset: 0;
             background: rgba(0, 0, 0, 0.8);
-            z-index: 1000;
+            backdrop-filter: blur(8px);
+            display: none;
             align-items: center;
             justify-content: center;
-            backdrop-filter: blur(5px);
+            z-index: 5000;
         }
 
         .modal.active {
             display: flex;
         }
 
-        .modal-content {
-            background: var(--card);
+        .modal-card {
+            background: var(--bg);
             border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 24px;
-            width: 90%;
-            max-width: 500px;
-            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
-        }
-
-        .form-group {
-            margin-bottom: 16px;
-        }
-
-        .form-group label {
-            display: block;
-            font-size: 12px;
-            color: var(--muted);
-            margin-bottom: 6px;
-        }
-
-        .form-group select,
-        .form-group textarea,
-        .form-group input {
+            border-radius: 24px;
+            padding: 32px;
             width: 100%;
+            max-width: 500px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 32px;
+            right: 32px;
             background: var(--surface);
             border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 10px;
-            color: var(--text);
-            outline: none;
+            padding: 14px 24px;
+            border-radius: 14px;
+            font-size: 13px;
+            font-weight: 600;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.3s;
+            z-index: 6000;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
         }
     </style>
 </head>
 
 <body>
+    <div class="bg-mesh"></div>
 
-    <div class="header">
-        <div class="header-left">
-            <div class="logo">🤖</div>
-            <h1>Auto-Apply Dashboard</h1>
+    <header class="header">
+        <div class="header-brand">
+            <div class="logo-sphere">⚡</div>
+            <h1>JobPulse <span style="font-weight:300; opacity:0.5; font-size:14px; margin-left:6px;">AI Outreach</span>
+            </h1>
         </div>
-        <span class="header-badge">Rishav Tarway</span>
+        <div id="status-header">
+            <div class="status-badge st-applied" style="background:rgba(255,255,255,0.05); color:var(--text-secondary)">
+                Scanning Service: Idle</div>
+        </div>
+    </header>
+
+    <div class="page-wrapper fade-stagger">
+        <aside class="sidebar-sticky">
+            <div class="glass-card">
+                <div class="section-label">Commands</div>
+                <button class="action-button" id="btn-trigger" onclick="triggerScript()">
+                    ✨ FETCH & AUTO-APPLY
+                </button>
+                <div style="font-size:11px; text-align:center; color:var(--text-muted); margin-top:12px;">
+                    Last Process: <span id="last-run-time">—</span>
+                </div>
+            </div>
+
+            <div id="otp-box">
+                <div style="font-family:var(--font-heading); font-weight:700; color:#f59e0b;">Verification Required
+                </div>
+                <p style="font-size:12px; color:var(--text-secondary); margin-top:4px;">Enter the code from Telegram:
+                </p>
+                <input type="text" id="otp-input" class="otp-input" placeholder="00000" maxlength="5">
+                <button class="action-button" style="background:#f59e0b; color:#000;" onclick="submitOtp()">VERIFY
+                    OTP</button>
+            </div>
+
+            <div id="password-box">
+                <div style="font-family:var(--font-heading); font-weight:700; color:var(--accent);">2FA Security</div>
+                <p style="font-size:12px; color:var(--text-secondary); margin-top:4px;">Enter your cloud password:</p>
+                <input type="password" id="password-input" class="otp-input" style="text-align:left; font-size:14px;">
+                <button class="action-button" style="background:var(--accent-bright); color:#fff;"
+                    onclick="submitPassword()">UNLOCK</button>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-pill">
+                    <div class="stat-val" id="stat-total">0</div>
+                    <div class="stat-label">Total Jobs</div>
+                </div>
+                <div class="stat-pill">
+                    <div class="stat-val" id="stat-applied">0</div>
+                    <div class="stat-label">Drafts</div>
+                </div>
+            </div>
+
+            <div class="cyber-tabs">
+                <div class="cyber-tab active" onclick="switchTab('terminal')">Logs</div>
+                <div class="cyber-tab" onclick="switchTab('manual')">Tasks</div>
+                <div class="cyber-tab" onclick="switchTab('tracker')">Pipeline</div>
+            </div>
+
+            <div class="glass-card" style="padding: 20px;">
+                <div class="section-label">Engine Health</div>
+                <div style="font-size:11px; color:var(--text-secondary); display:flex; flex-direction:column; gap:8px;">
+                    <div style="display:flex; justify-content:space-between;"><span>AI Models</span><span id="ai-status"
+                            style="color:var(--success)">OFFLINE</span></div>
+                    <div style="display:flex; justify-content:space-between;"><span>Gmail</span><span
+                            style="color:var(--success)">LINKED</span></div>
+                </div>
+            </div>
+        </aside>
+
+        <main class="content-area">
+            <div id="tab-terminal" class="tab-content active">
+                <div class="section-label" style="margin-left:8px;">Live Process Streams</div>
+                <div id="terminal" class="terminal-container">🚀 Initializing system core...</div>
+            </div>
+
+            <div id="tab-manual" class="tab-content">
+                <div class="section-label" style="margin-left:8px;">Manual Interventions</div>
+                <div id="manual-tasks-container">
+                    <div style="text-align:center; padding:60px; color:var(--text-muted)">
+                        <div style="font-size:32px; margin-bottom:12px;">📂</div>
+                        Extraction complete. No manual links found.
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-tracker" class="tab-content">
+                <div class="section-label" style="margin-left:8px;">Application Journey</div>
+                <div id="applications-container">
+                    <p style="text-align:center; padding:40px; color:var(--text-muted)">Loading tracking database...</p>
+                </div>
+            </div>
+        </main>
     </div>
 
-    <div class="container">
-
-        <!-- Stats Bar -->
-        <div class="stats-bar">
-            <div class="stat-pill">
-                <div class="stat-num" id="stat-tasks">—</div>
-                <div class="stat-label">Manual Tasks</div>
+    <!-- Update Modal -->
+    <div id="modal-update" class="modal">
+        <div class="modal-card">
+            <div class="section-label">Update Application</div>
+            <input type="hidden" id="edit-app-id">
+            <div style="margin-bottom:20px;">
+                <label style="font-size:11px; color:var(--text-secondary); display:block; margin-bottom:8px;">Current
+                    Status</label>
+                <select id="edit-status"
+                    style="width:100%; padding:12px; background:var(--card); border:1px solid var(--border); border-radius:10px; color:#fff;">
+                    <option value="to_apply">To Apply (Link)</option>
+                    <option value="applied">Applied / Drafted</option>
+                    <option value="intro_call">Intro Call</option>
+                    <option value="technical_round">Technical Round</option>
+                    <option value="hr_round">HR / Final Round</option>
+                    <option value="offered">Job Offered</option>
+                    <option value="rejected">Rejected</option>
+                    <option value="no_response">No Response</option>
+                </select>
             </div>
-            <div class="stat-pill">
-                <div class="stat-num" id="stat-history">—</div>
-                <div class="stat-label">Jobs Logged</div>
+            <div style="margin-bottom:24px;">
+                <label style="font-size:11px; color:var(--text-secondary); display:block; margin-bottom:8px;">Internal
+                    Notes</label>
+                <textarea id="edit-notes"
+                    style="width:100%; height:100px; padding:12px; background:var(--card); border:1px solid var(--border); border-radius:10px; color:#fff; font-family:inherit;"></textarea>
             </div>
-            <div class="stat-pill">
-                <div class="stat-num" id="stat-status">Idle</div>
-                <div class="stat-label">Status</div>
-            </div>
-        </div>
-
-        <!-- Main Trigger Button -->
-        <button class="trigger-btn" id="btn-trigger" onclick="triggerScript()">
-            ⚡ Fetch New Jobs & Auto-Apply
-        </button>
-
-        <!-- OTP Input Box (shown when Telegram needs auth) -->
-        <div id="otp-box">
-            <div class="otp-title">⚠️ Telegram OTP Required</div>
-            <div class="otp-desc">Telegram sent a verification code to your phone/app. Enter it below:</div>
-            <div class="otp-row">
-                <input class="otp-input" type="text" id="otp-input" maxlength="6" placeholder="——————"
-                    autocomplete="one-time-code" inputmode="numeric">
-                <button class="otp-submit" onclick="submitOtp()">Submit OTP</button>
-            </div>
-        </div>
-
-        <!-- 2FA Password Box -->
-        <div id="password-box">
-            <div class="otp-title" style="color: #a78bfa">🔐 2FA Password Required</div>
-            <div class="otp-desc">Enter your Telegram two-factor authentication password:</div>
-            <div class="otp-row">
-                <input class="otp-input" type="password" id="password-input" placeholder="••••••••"
-                    style="letter-spacing:4px; font-size:18px">
-                <button class="otp-submit" style="background:#8b5cf6;color:white"
-                    onclick="submitPassword()">Submit</button>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                <button class="action-button" style="background:var(--card); color:#fff;"
+                    onclick="closeModal()">Cancel</button>
+                <button class="action-button" style="background:var(--accent-bright); color:#fff;"
+                    onclick="saveAppUpdate()">Save Changes</button>
             </div>
         </div>
-
-        <!-- Tabs -->
-        <div class="tabs">
-            <div class="tab active" id="tab-live-btn" onclick="switchTab('logs', this)">📟 Live Logs</div>
-            <div class="tab" id="tab-tracker-btn" onclick="switchTab('tracker', this)">🎯 Job Tracker</div>
-            <div class="tab" id="tab-tasks-btn" onclick="switchTab('tasks', this)">📋 Manual Tasks</div>
-            <div class="tab" id="tab-hist-btn" onclick="switchTab('history', this)">📜 History</div>
-        </div>
-
-        <!-- LOGS TAB -->
-        <div id="tab-logs" class="tab-content active card">
-            <div class="card-header">
-                <div style="display:flex; align-items:center; gap:10px;">
-                    <span class="card-title">Terminal Output</span>
-                    <button id="btn-stop" class="refresh-btn"
-                        style="color:var(--danger); border-color:rgba(239,68,68,0.3); display:none;"
-                        onclick="stopScript()">🛑 Stop Process</button>
-                </div>
-                <span class="badge badge-idle" id="status-badge">● Idle</span>
-            </div>
-            <div id="terminal">Waiting to run... Click "Fetch New Jobs &amp; Auto-Apply" to start.\n</div>
-        </div>
-
-        <!-- TRACKER TAB -->
-        <div id="tab-tracker" class="tab-content">
-            <div class="card">
-                <div class="card-header">
-                    <span class="card-title">🎯 Active Application Tracking</span>
-                    <button class="refresh-btn" onclick="fetchApps()">↻ Refresh</button>
-                </div>
-                <div id="tracker-container">
-                    <div class="empty">
-                        <div class="empty-icon">🎯</div>No applications tracked yet.
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Update Modal -->
-        <div id="modal-update" class="modal">
-            <div class="modal-content">
-                <div class="card-header" style="margin-bottom:20px">
-                    <span class="card-title">Update Application Status</span>
-                    <button class="refresh-btn" onclick="closeModal()">✕</button>
-                </div>
-                <input type="hidden" id="edit-app-id">
-                <div class="form-group">
-                    <label>Status</label>
-                    <select id="edit-status">
-                        <option value="applied">Applied / Drafted</option>
-                        <option value="intro_call">Preliminary / Intro Call</option>
-                        <option value="technical_round">Technical Interview</option>
-                        <option value="hr_round">HR / Culture Interview</option>
-                        <option value="offered">🏆 Offer Received</option>
-                        <option value="rejected">Rejected</option>
-                        <option value="no_response">No Response</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Notes</label>
-                    <textarea id="edit-notes" placeholder="e.g. Asked about React hooks, mention fuzzy PR..."
-                        rows="3"></textarea>
-                </div>
-                <div style="display:flex; gap:10px; margin-top:20px">
-                    <button class="trigger-btn" onclick="saveAppUpdate()" style="margin:0; flex:1">Save Changes</button>
-                    <button class="trigger-btn" onclick="deleteApp()"
-                        style="margin:0; flex:0.4; background:var(--danger)">Delete</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- TASKS TAB -->
-        <div id="tab-tasks" class="tab-content">
-            <div class="card">
-                <div class="card-header">
-                    <span class="card-title">📋 Manual Application Links</span>
-                    <button class="refresh-btn" onclick="fetchTasks()">↻ Refresh</button>
-                </div>
-                <p style="font-size: 13px; color: var(--muted); margin-bottom: 16px;">These jobs used Google Forms or
-                    external links. Apply manually or use the Chrome Extension:</p>
-                <div id="tasks-container">
-                    <div class="empty">
-                        <div class="empty-icon">📭</div>Loading tasks...
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- HISTORY TAB -->
-        <div id="tab-history" class="tab-content">
-            <div class="card">
-                <div class="card-header">
-                    <span class="card-title">📜 Job History (Last 50)</span>
-                    <button class="refresh-btn" onclick="fetchHistory()">↻ Refresh</button>
-                </div>
-                <div id="history-container">
-                    <div class="empty">
-                        <div class="empty-icon">📂</div>Loading history...
-                    </div>
-                </div>
-            </div>
-        </div>
-
     </div>
 
-    <!-- Toast Notification -->
-    <div class="toast" id="toast"></div>
+    <div id="toast" class="toast">Action completed successfully</div>
 
     <script>
         let pollInterval = null;
-        let activeTab = 'logs';
+        let lastLogIndex = 0;
 
-        // ─── Tab Switching ─────────────────────────────────────────────────────────
-        function switchTab(tabName, elem) {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            elem.classList.add('active');
-            document.getElementById('tab-' + tabName).classList.add('active');
-            activeTab = tabName;
-            if (tabName === 'tracker') fetchApps();
-            if (tabName === 'tasks') fetchTasks();
-            if (tabName === 'history') fetchHistory();
+        function showToast(msg, type = 'success') {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'toast show';
+            setTimeout(() => t.classList.remove('show'), 3000);
         }
 
-        // ─── Tracker Logic ────────────────────────────────────────────────────────
-        async function fetchApps() {
-            const container = document.getElementById('tracker-container');
+        async function triggerScript() {
+            const btn = document.getElementById('btn-trigger');
+            btn.disabled = true;
+            btn.innerHTML = '✨ EXECUTING ENGINE...';
+            document.getElementById('terminal').innerHTML = '<b>[System]</b> Spawning worker process...\n';
+
             try {
-                const res = await fetch('/api/applications');
-                const apps = await res.json();
-                renderApps(apps);
+                const res = await fetch('/api/trigger', { method: 'POST' });
+                startPolling();
             } catch (e) {
-                console.error(e);
+                showToast('Failed to trigger process', 'danger');
+                btn.disabled = false;
             }
         }
 
-        function renderApps(apps) {
-            const container = document.getElementById('tracker-container');
-            if (!apps || apps.length === 0) {
-                container.innerHTML = '<div class="empty"><div class="empty-icon">🎯</div>No applications found yet.</div>';
-                return;
-            }
+        function startPolling() {
+            if (pollInterval) clearInterval(pollInterval);
+            pollInterval = setInterval(fetchUpdate, 1500);
+            fetchUpdate();
+        }
 
-            container.innerHTML = apps.reverse().map(app => {
-                const dateStr = new Date(app.appliedDate).toLocaleDateString('en-IN', {
-                    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
-                });
+        async function fetchUpdate() {
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
 
-                const statusLabels = {
-                    'to_apply': { name: 'To Apply (Link)', idx: 0 },
-                    'applied': { name: 'Applied', idx: 1 },
-                    'intro_call': { name: 'Intro Call', idx: 2 },
-                    'technical_round': { name: 'Technical', idx: 3 },
-                    'hr_round': { name: 'HR / Final', idx: 4 },
-                    'offered': { name: 'Offered', idx: 5 },
-                    'rejected': { name: 'Rejected', idx: -1 },
-                    'no_response': { name: 'No Response', idx: -1 }
-                };
-
-                const currentStatus = statusLabels[app.status] || { name: 'Unknown', idx: 0 };
-                const isFailed = app.status === 'rejected' || app.status === 'no_response';
-
-                // Channel class mapping
-                let chanClass = 'chan-default';
-                const lowerChan = (app.channel || '').toLowerCase();
-                if (lowerChan.includes('techuprise')) chanClass = 'chan-techuprise';
-                else if (lowerChan.includes('arsh')) chanClass = 'chan-arsh';
-                else if (lowerChan.includes('kushal')) chanClass = 'chan-kushal';
-
-                let progressHtml = '';
-                if (!isFailed) {
-                    progressHtml = `
-                        <div class="progress-track">
-                            <div class="step ${currentStatus.idx >= 0 ? 'completed' : ''} ${currentStatus.idx == 0 ? 'active' : ''}"></div>
-                            <div class="step ${currentStatus.idx >= 1 ? 'completed' : ''} ${currentStatus.idx == 1 ? 'active' : ''}"></div>
-                            <div class="step ${currentStatus.idx >= 2 ? 'completed' : ''} ${currentStatus.idx == 2 ? 'active' : ''}"></div>
-                            <div class="step ${currentStatus.idx >= 3 ? 'completed' : ''} ${currentStatus.idx == 3 ? 'active' : ''}"></div>
-                            <div class="step ${currentStatus.idx >= 4 ? 'completed' : ''} ${currentStatus.idx == 4 ? 'active' : ''}"></div>
-                            <div class="step ${currentStatus.idx >= 5 ? 'completed' : ''} ${currentStatus.idx == 5 ? 'active' : ''}"></div>
-                        </div>
-                    `;
+                // Update terminal
+                const term = document.getElementById('terminal');
+                if (data.logs && data.logs.length > lastLogIndex) {
+                    const newLogs = data.logs.slice(lastLogIndex);
+                    newLogs.forEach(line => {
+                        const formatted = line
+                            .replace(/\[PHASE (\d+)\]/g, '<b>[PHASE $1]</b>')
+                            .replace(/✅/g, '<i>✅</i>')
+                            .replace(/❌/g, '<span style="color:var(--danger)">❌</span>');
+                        term.innerHTML += formatted + '<br>';
+                    });
+                    lastLogIndex = data.logs.length;
+                    term.scrollTop = term.scrollHeight;
                 }
 
+                if (data.status === 'idle' && !data.logs.includes('Exiting...')) {
+                    clearInterval(pollInterval);
+                    document.getElementById('btn-trigger').disabled = false;
+                    document.getElementById('btn-trigger').innerHTML = '✨ FETCH & AUTO-APPLY';
+                    fetchApps();
+                    fetchManualJobs();
+                }
+
+                // Handle OTP/Password visibility
+                if (data.needs_otp) {
+                    document.getElementById('otp-box').style.display = 'block';
+                } else {
+                    document.getElementById('otp-box').style.display = 'none';
+                }
+
+                if (data.needs_password) {
+                    document.getElementById('password-box').style.display = 'block';
+                } else {
+                    document.getElementById('password-box').style.display = 'none';
+                }
+
+            } catch (e) { }
+        }
+
+        async function submitOtp() {
+            const code = document.getElementById('otp-input').value;
+            await fetch('/api/otp', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code })
+            });
+            document.getElementById('otp-input').value = '';
+        }
+
+        async function submitPassword() {
+            const password = document.getElementById('password-input').value;
+            await fetch('/api/password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password })
+            });
+            document.getElementById('password-input').value = '';
+        }
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.querySelectorAll('.cyber-tab').forEach(t => t.classList.remove('active'));
+            document.getElementById('tab-' + tab).classList.add('active');
+            event.currentTarget.classList.add('active');
+
+            if (tab === 'tracker') fetchApps();
+            if (tab === 'manual') fetchManualJobs();
+        }
+
+        async function fetchApps() {
+            const res = await fetch('/api/applications');
+            const apps = await res.json();
+            document.getElementById('stat-total').textContent = apps.length;
+            document.getElementById('stat-applied').textContent = apps.filter(a => a.status === 'applied').length;
+
+            const container = document.getElementById('applications-container');
+            container.innerHTML = apps.reverse().map(app => {
+                const statusMap = {
+                    'to_apply': { cls: 'st-to_apply', label: 'Manual Link', step: 1 },
+                    'applied': { cls: 'st-applied', label: 'Drafted', step: 2 },
+                    'technical_round': { cls: 'st-technical_round', label: 'Technical', step: 3 },
+                    'offered': { cls: 'st-applied', label: 'Offered', step: 6 }
+                };
+                const s = statusMap[app.status] || { cls: '', label: app.status, step: 0 };
+
                 return `
-                    <div class="task-card tracker-card" onclick="openUpdateModal('${app.id}', '${app.status}', \`${app.notes || ''}\`)">
+                    <div class="tracker-item" onclick="openModal('${app.id}', '${app.status}', \`${app.notes || ''}\`)">
+                        <div class="tracker-icon">🚀</div>
                         <div class="tracker-info">
-                            <div class="task-meta">${dateStr} ${app.channel ? `<span class="channel-badge ${chanClass}">${app.channel}</span>` : ''}</div>
+                            <span class="chan-chip">${app.channel || 'COLD OUTREACH'}</span>
                             <h3>${app.company}</h3>
-                            <p>${app.role} — <span class="status-${app.status}">${currentStatus.name}</span></p>
-                            ${app.email ? `<p style="font-size:11px; color:var(--muted); margin-bottom: 5px;">📧 ${app.email}</p>` : ''}
-                            ${progressHtml}
-                            <div class="task-desc" style="margin-top:10px; font-size:11px; opacity:0.7; max-height: 100px; overflow-y: auto;">
-                                ${app.description ? `📝 ${app.description.substring(0, 300)}...` : (app.notes ? `📝 ${app.notes}` : '')}
+                            <p>${app.role}</p>
+                            <div class="progress-line">
+                                <div class="p-dot ${s.step >= 1 ? 'done' : ''} ${s.step == 1 ? 'current' : ''}"></div>
+                                <div class="p-dot ${s.step >= 2 ? 'done' : ''} ${s.step == 2 ? 'current' : ''}"></div>
+                                <div class="p-dot ${s.step >= 3 ? 'done' : ''} ${s.step == 3 ? 'current' : ''}"></div>
+                                <div class="p-dot ${s.step >= 4 ? 'done' : ''} ${s.step == 4 ? 'current' : ''}"></div>
+                                <div class="p-dot ${s.step >= 5 ? 'done' : ''} ${s.step == 5 ? 'current' : ''}"></div>
+                                <div class="p-dot ${s.step >= 6 ? 'done' : ''} ${s.step == 6 ? 'current' : ''}"></div>
                             </div>
-                            ${app.link ? `<a href="${app.link}" target="_blank" class="btn-extension" style="margin-top:10px; background: var(--accent); color: white; display: inline-flex; align-items: center; gap: 5px;" onclick="event.stopPropagation()">🔗 Open Application Link</a>` : ''}
                         </div>
-                        <div style="font-size:20px; color:var(--muted)">⚙️</div>
+                        <div>
+                            <span class="status-badge ${s.cls}">${s.label}</span>
+                        </div>
                     </div>
                 `;
             }).join('');
         }
 
-        function openUpdateModal(id, status, notes) {
+        async function fetchManualJobs() {
+            const res = await fetch('/api/manual-jobs');
+            const jobs = await res.json();
+            const container = document.getElementById('manual-tasks-container');
+            if (jobs.length === 0) {
+                container.innerHTML = '<div style="text-align:center; padding:60px; color:var(--text-muted)">No manual tasks found.</div>';
+                return;
+            }
+            container.innerHTML = jobs.map(j => `
+                <div class="glass-card">
+                    <span class="chan-chip">${j.channel}</span>
+                    <h3 style="font-family:var(--font-heading); margin-bottom:8px;">${j.company || 'Unknown Company'}</h3>
+                    <p style="font-size:13px; color:var(--text-secondary); margin-bottom:20px;">${j.text.substring(0, 150)}...</p>
+                    <a href="${j.link}" target="_blank" class="action-button" style="background:var(--accent-bright); color:#fff; text-decoration:none;">OPEN APPLICATION LINK</a>
+                </div>
+            `).join('');
+        }
+
+        function openModal(id, status, notes) {
             document.getElementById('edit-app-id').value = id;
             document.getElementById('edit-status').value = status;
             document.getElementById('edit-notes').value = notes;
@@ -1022,333 +905,44 @@
             const status = document.getElementById('edit-status').value;
             const notes = document.getElementById('edit-notes').value;
 
-            try {
-                const res = await fetch('/api/applications/' + id, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status, notes })
-                });
-                if (res.ok) {
-                    showToast('Application updated!', 'success');
-                    closeModal();
-                    fetchApps();
-                }
-            } catch (e) { showToast('Update failed', 'error'); }
-        }
-
-        async function deleteApp() {
-            if (!confirm('Delete this record?')) return;
-            const id = document.getElementById('edit-app-id').value;
-            try {
-                const res = await fetch('/api/applications/' + id, { method: 'DELETE' });
-                if (res.ok) {
-                    showToast('Record deleted');
-                    closeModal();
-                    fetchApps();
-                }
-            } catch (e) { showToast('Delete failed', 'error'); }
-        }
-
-        // ─── Toast ─────────────────────────────────────────────────────────────────
-        function showToast(msg, type = 'info') {
-            const t = document.getElementById('toast');
-            t.textContent = msg;
-            t.className = `toast ${type} show`;
-            setTimeout(() => t.classList.remove('show'), 3000);
-        }
-
-        // ─── Copy to clipboard ─────────────────────────────────────────────────────
-        function copyLink(url) {
-            navigator.clipboard.writeText(url).then(() => showToast('Link copied!', 'success'));
-        }
-
-        // ─── Trigger Script ─────────────────────────────────────────────────────────
-        async function triggerScript() {
-            const btn = document.getElementById('btn-trigger');
-            btn.disabled = true;
-            btn.innerHTML = '⏳ Running...';
-            setStatus('running');
-
-            const term = document.getElementById('terminal');
-            term.innerText = '🚀 Initializing...\n';
-            hideOtpBoxes();
-
-            try {
-                const res = await fetch('/api/trigger', { method: 'POST' });
-                const data = await res.json();
-
-                if (res.status === 400 && data.error === 'Process is already running') {
-                    showToast('Joining already running process...', 'info');
-                    term.innerText = '📡 Attaching to existing process logs...\n';
-                    startPolling();
-                    return;
-                }
-
-                if (!res.ok) {
-                    showToast(data.error || 'Failed to start', 'error');
-                    resetButton();
-                    return;
-                }
-                startPolling();
-            } catch (e) {
-                showToast('Failed to reach server', 'error');
-                resetButton();
-            }
-        }
-
-        function resetButton() {
-            const btn = document.getElementById('btn-trigger');
-            btn.disabled = false;
-            btn.innerHTML = '⚡ Fetch New Jobs & Auto-Apply';
-            setStatus('idle');
-        }
-
-        function setStatus(state) {
-            const badge = document.getElementById('status-badge');
-            const stat = document.getElementById('stat-status');
-            const stopBtn = document.getElementById('btn-stop');
-
-            if (state === 'running') {
-                badge.className = 'badge badge-running';
-                badge.innerHTML = '<span class="pulse-dot"></span> Running';
-                stat.textContent = 'Running';
-                stat.style.color = 'var(--success)';
-                stopBtn.style.display = 'inline-block';
-            } else if (state === 'otp') {
-                badge.className = 'badge badge-warning';
-                badge.innerHTML = '⚠️ Needs OTP';
-                stat.textContent = 'Waiting';
-                stat.style.color = 'var(--warning)';
-                stopBtn.style.display = 'inline-block';
-            } else {
-                badge.className = 'badge badge-idle';
-                badge.innerHTML = '● Idle';
-                stat.textContent = 'Idle';
-                stat.style.color = 'var(--accent)';
-                stopBtn.style.display = 'none';
-            }
-        }
-
-        async function stopScript() {
-            if (!confirm('Are you sure you want to terminate the current process?')) return;
-            try {
-                const res = await fetch('/api/stop', { method: 'POST' });
-                if (res.ok) {
-                    showToast('Termination signal sent', 'info');
-                } else {
-                    const data = await res.json();
-                    showToast(data.error || 'Failed to stop', 'error');
-                }
-            } catch (e) {
-                showToast('Failed to reach server', 'error');
-            }
-        }
-
-        // Check status on page load
-        (async () => {
-            try {
-                const res = await fetch('/api/logs');
-                const data = await res.json();
-                if (data.isRunning) {
-                    setStatus('running');
-                    startPolling();
-                }
-            } catch (e) { }
-        })();
-
-        // ─── Polling ────────────────────────────────────────────────────────────────
-        function startPolling() {
-            clearInterval(pollInterval);
-            pollInterval = setInterval(pollLogs, 800);
-        }
-
-        async function pollLogs() {
-            try {
-                const res = await fetch('/api/logs');
-                const data = await res.json();
-
-                // Update terminal
-                const term = document.getElementById('terminal');
-                const wasAtBottom = term.scrollTop + term.clientHeight >= term.scrollHeight - 20;
-                term.innerText = data.logs || 'Waiting for output...';
-                if (wasAtBottom) term.scrollTop = term.scrollHeight;
-
-                // OTP requested?
-                const otpBox = document.getElementById('otp-box');
-                const pwBox = document.getElementById('password-box');
-
-                if (data.otpRequired && !otpBox.classList.contains('active')) {
-                    otpBox.classList.add('active');
-                    document.getElementById('otp-input').focus();
-                    setStatus('otp');
-                    showToast('⚠️ OTP required — check the dashboard!', 'info');
-                } else if (!data.otpRequired) {
-                    otpBox.classList.remove('active');
-                }
-
-                if (data.passwordRequired && !pwBox.classList.contains('active')) {
-                    pwBox.classList.add('active');
-                    document.getElementById('password-input').focus();
-                } else if (!data.passwordRequired) {
-                    pwBox.classList.remove('active');
-                }
-
-                // Done?
-                if (!data.isRunning) {
-                    clearInterval(pollInterval);
-                    resetButton();
-                    hideOtpBoxes();
-                    setTimeout(() => {
-                        fetchTasks();
-                        fetchHistory();
-                    }, 500);
-                }
-            } catch (e) {
-                // Server might have restarted — stop polling
-                clearInterval(pollInterval);
-                resetButton();
-            }
-        }
-
-        function hideOtpBoxes() {
-            document.getElementById('otp-box').classList.remove('active');
-            document.getElementById('password-box').classList.remove('active');
-        }
-
-        // ─── Submit OTP ─────────────────────────────────────────────────────────────
-        async function submitOtp() {
-            const code = document.getElementById('otp-input').value.trim();
-            if (!code) { showToast('Please enter the OTP code', 'error'); return; }
-
-            try {
-                const res = await fetch('/api/submit-otp', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ code })
-                });
-                const data = await res.json();
-                if (res.ok) {
-                    document.getElementById('otp-input').value = '';
-                    document.getElementById('otp-box').classList.remove('active');
-                    setStatus('running');
-                    showToast('✅ OTP submitted!', 'success');
-                } else {
-                    showToast(data.error || 'Failed to submit OTP', 'error');
-                }
-            } catch (e) {
-                showToast('Connection error', 'error');
-            }
-        }
-
-        // ─── Submit Password ─────────────────────────────────────────────────────────
-        async function submitPassword() {
-            const pw = document.getElementById('password-input').value;
-            if (!pw) { showToast('Please enter your password', 'error'); return; }
-
-            try {
-                const res = await fetch('/api/submit-password', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ password: pw })
-                });
-                const data = await res.json();
-                if (res.ok) {
-                    document.getElementById('password-input').value = '';
-                    document.getElementById('password-box').classList.remove('active');
-                    setStatus('running');
-                    showToast('✅ Password submitted!', 'success');
-                } else {
-                    showToast(data.error || 'Failed to submit password', 'error');
-                }
-            } catch (e) {
-                showToast('Connection error', 'error');
-            }
-        }
-
-        // Allow Enter key to submit OTP/password
-        document.addEventListener('DOMContentLoaded', () => {
-            document.getElementById('otp-input').addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') submitOtp();
+            await fetch('/api/applications/' + id, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status, notes })
             });
-            document.getElementById('password-input').addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') submitPassword();
+            showToast('Application record updated');
+            closeModal();
+            fetchApps();
+        }
+
+        // Check health
+        setInterval(async () => {
+            try {
+                const res = await fetch('http://127.0.0.1:3001/api/form-filler/status');
+                const data = await res.json();
+                document.getElementById('ai-status').textContent = data.llm_available ? 'READY' : 'LLM ERROR';
+                document.getElementById('ai-status').style.color = data.llm_available ? 'var(--success)' : 'var(--danger)';
+            } catch (e) {
+                document.getElementById('ai-status').textContent = 'OFFLINE';
+                document.getElementById('ai-status').style.color = 'var(--text-muted)';
+            }
+        }, 5000);
+
+        document.addEventListener('mousemove', e => {
+            document.querySelectorAll('.glass-card, .tracker-item').forEach(card => {
+                const rect = card.getBoundingClientRect();
+                const x = ((e.clientX - rect.left) / rect.width) * 100;
+                const y = ((e.clientY - rect.top) / rect.height) * 100;
+                card.style.setProperty('--mouse-x', `${x}%`);
+                card.style.setProperty('--mouse-y', `${y}%`);
             });
         });
 
-        // ─── Fetch Manual Tasks ──────────────────────────────────────────────────────
-        async function fetchTasks() {
-            const container = document.getElementById('tasks-container');
-            try {
-                const res = await fetch('/api/manual-tasks');
-                const tasks = await res.json();
-
-                document.getElementById('stat-tasks').textContent = tasks.length;
-
-                if (tasks.length === 0) {
-                    container.innerHTML = '<div class="empty"><div class="empty-icon">📭</div>No manual tasks yet. Run "Fetch & Apply" to find new jobs.</div>';
-                    return;
-                }
-
-                container.innerHTML = tasks.map(t => {
-                    const desc = t.description || 'No description available.';
-                    const shortDesc = desc.length > 200 ? desc.substring(0, 200) + '...' : desc;
-                    const link = t.link || '#';
-                    const safeLink = link.startsWith('http') ? link : ('https://' + link);
-                    const domain = (() => {
-                        try { return new URL(safeLink).hostname; } catch { return link; }
-                    })();
-
-                    return `
-                <div class="task-card">
-                    <div class="task-meta">🆔 Job #${t.id} &nbsp;|&nbsp; 📅 ${new Date(t.date).toLocaleString()} &nbsp;|&nbsp; 🌐 ${domain}</div>
-                    <div class="task-desc">${shortDesc.replace(/\n/g, '<br>')}</div>
-                    <div class="task-actions">
-                        <a href="${safeLink}" target="_blank" class="btn-apply">🔗 Open Link to Apply</a>
-                        <button class="btn-extension" onclick="sendToExtension('${safeLink.replace(/'/g, "\\'")}')">🤖 Auto-Fill via Extension</button>
-                        <button class="copy-link" onclick="copyLink('${safeLink.replace(/'/g, "\\'")}')">📋 Copy URL</button>
-                    </div>
-                </div>`;
-                }).join('');
-            } catch (e) {
-                container.innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div>Failed to load tasks. Server may be offline.</div>';
-            }
-        }
-
-        // ─── Send URL to Extension via popup storage ──────────────────────────────
-        function sendToExtension(url) {
-            // Copy URL to clipboard — user can then paste in extension popup
-            navigator.clipboard.writeText(url).then(() => {
-                showToast('📋 URL copied! Paste it in the Extension popup to auto-fill.', 'info');
-            }).catch(() => {
-                showToast('Could not copy URL. Try manually.', 'error');
-            });
-        }
-
-        // ─── Fetch History ─────────────────────────────────────────────────────────
-        async function fetchHistory() {
-            const container = document.getElementById('history-container');
-            try {
-                const res = await fetch('/api/history');
-                const history = await res.json();
-
-                document.getElementById('stat-history').textContent = history.length;
-
-                if (history.length === 0) {
-                    container.innerHTML = '<div class="empty"><div class="empty-icon">📂</div>No history yet.</div>';
-                    return;
-                }
-
-                container.innerHTML = history.map(h => `<div class="history-line">${h}</div>`).join('');
-            } catch (e) {
-                container.innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div>Failed to load history.</div>';
-            }
-        }
-
-        // ─── Init ──────────────────────────────────────────────────────────────────
-        fetchTasks();
-        fetchHistory();
+        window.onload = () => {
+            fetchApps();
+            fetchManualJobs();
+        };
     </script>
-
 </body>
 
 </html>

@@ -131,6 +131,16 @@ function writeApps(apps: any[]) {
     fs.writeFileSync(APPS_FILE, JSON.stringify(apps, null, 2));
 }
 
+// ============================================================
+// API: Manual Job List (Filtered from Tracker)
+// ============================================================
+app.get('/api/manual-jobs', (req, res) => {
+    const apps = readApps();
+    const manual = apps.filter((a: any) => a.status === 'to_apply' || a.status === 'manual_review');
+    manual.sort((a: any, b: any) => new Date(b.appliedDate).getTime() - new Date(a.appliedDate).getTime());
+    res.json(manual);
+});
+
 app.get('/api/applications', (req, res) => {
     res.json(readApps());
 });
