@@ -133,24 +133,37 @@
         }
 
         .page-wrapper {
-            max-width: 1200px;
+            max-width: 1440px;
             margin: 0 auto;
-            padding: 40px 24px;
+            padding: 32px 24px 100px;
             display: grid;
             grid-template-columns: 1fr;
-            gap: 32px;
+            gap: 40px;
             animation: fadeIn 0.8s ease-out;
         }
 
         @media (min-width: 1024px) {
             .page-wrapper {
-                grid-template-columns: 320px 1fr;
+                grid-template-columns: 340px 1fr;
                 align-items: start;
             }
 
             .sidebar-sticky {
                 position: sticky;
-                top: 100px;
+                top: 80px;
+                height: calc(100vh - 120px);
+                overflow-y: auto;
+                padding-right: 8px;
+                /* For scrollbar */
+            }
+
+            .sidebar-sticky::-webkit-scrollbar {
+                width: 4px;
+            }
+
+            .sidebar-sticky::-webkit-scrollbar-thumb {
+                background: var(--border);
+                border-radius: 10px;
             }
         }
 
@@ -870,11 +883,13 @@
                         <div class="tracker-icon" style="flex-shrink:0">🚀</div>
                         <div class="tracker-info">
                             <span class="chan-chip">${app.channel || 'COLD OUTREACH'}</span>
-                            <h3 style="color:#fff; margin-bottom:8px;">${app.company}</h3>
-                            <p style="color:var(--secondary); font-weight:600; margin-bottom:8px;">${app.role}</p>
-                            <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.6; margin-bottom:16px;">
-                                ${app.description ? app.description.replace(/\n/g, '<br>') : 'No description provided.'}
-                            </p>
+                            <h3 style="color:#fff; margin-bottom:4px; font-size: 18px;">${app.company}</h3>
+                            <p style="color:var(--secondary); font-weight:600; margin-bottom:12px; font-size: 14px;">${app.role}</p>
+                            <div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 20px;">
+                                <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.6;">
+                                    ${app.description ? app.description.replace(/\n/g, '<br>') : 'No description provided.'}
+                                </p>
+                            </div>
                             <div class="progress-line">
                                 <div class="p-dot ${s.step >= 1 ? 'done' : ''} ${s.step == 1 ? 'current' : ''}"></div>
                                 <div class="p-dot ${s.step >= 2 ? 'done' : ''} ${s.step == 2 ? 'current' : ''}"></div>
@@ -884,8 +899,9 @@
                                 <div class="p-dot ${s.step >= 6 ? 'done' : ''} ${s.step == 6 ? 'current' : ''}"></div>
                             </div>
                         </div>
-                        <div style="flex-shrink:0">
+                        <div style="flex-shrink:0; display: flex; flex-direction: column; gap: 8px; align-items: flex-end;">
                             <span class="status-badge ${s.cls}">${s.label}</span>
+                            ${app.link ? `<a href="${app.link}" target="_blank" class="action-button" style="padding: 8px 16px; font-size: 12px; width: auto;" onclick="event.stopPropagation()">🔗 LINK</a>` : ''}
                         </div>
                     </div>
                 `;
@@ -921,10 +937,10 @@
                             ${(j.description || j.text || 'No description available').replace(/\n/g, '<br>')}
                         </p>
                         <div style="display:flex; gap:12px;">
-                            <a href="${j.link}" target="_blank" class="action-button" style="background:var(--accent-bright); color:#fff; text-decoration:none; flex:1; box-shadow: 0 4px 15px rgba(99,102,241,0.3);">
+                            <a href="${j.link}" target="_blank" class="action-button" style="background:var(--accent-bright); color:#fff; text-decoration:none; flex:1; box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);" onclick="event.stopPropagation()">
                                 🔗 OPEN APPLICATION PORTAL
                             </a>
-                            <button class="action-button" style="background:var(--card); color:#fff; width:auto; padding:0 16px;" onclick="switchTab('tracker'); setTimeout(() => openModal('${j.id}', '${j.status}', '${j.notes || ''}'), 100)">
+                            <button class="action-button" style="background:var(--card); color:#fff; width:auto; padding:0 16px;" onclick="event.stopPropagation(); switchTab('tracker'); setTimeout(() => openModal('${j.id}', '${j.status}', '${j.notes || ''}'), 100)">
                                 ⚙️
                             </button>
                         </div>
