@@ -432,18 +432,23 @@ async function generateEmailContent(jobText: string, company: string, contactNam
   const greeting = contactName === "Team" ? `Hi ${company}` : `Hi ${contactName}`;
 
   const prompt = `
-Generate a professional cold email application as valid JSON.
+Generate a highly polished, eye-catching cold email application as valid JSON.
 Job Description: "${jobText}"
 Target Company: ${company}
 
 STRICT RULES:
 1. Return JSON: {"subject": "...", "body": "..."}
-2. Paragraph 1: Mention passion for the role/tech instead of focusing purely on "following the company" if company name is unknown. 
-3. Mention rishav tarway, IIIT Bangalore internship, Classplus internship.
-4. Mention fuzzing PR at OpenPrinting.
-5. NO placeholders like [Company Name]. Use "${company}" exactly or generic professional terms.
-6. Body must be exactly 3 paragraphs in HTML <p> tags.
-7. Focus on skills matching the job description.`;
+2. The email must be extremely punchy, designed for a 5-10 second skim by a busy Founder or HR (especially targeting YC 2024/2025 startups). It must grab attention immediately and never fail to get a reply.
+3. Tone: Confident, crisp, highly professional but modern (not generic or boring).
+4. Include these exact bragging points naturally, without sounding boastful:
+   - 2 years of Open Source contributions (including merged PRs in OpenPrinting).
+   - 6 paid internships (3 onsite, 3 remote).
+   - Backend optimization & architecture experience at Classplus scaling systems.
+5. Offer proof of work casually but confidently: "I have 5 links already shared on my profile, but let me know what specific tech stack PRs/links you want to see, and I will share them."
+6. If the company is unknown or generic, focus heavily on the tech stack, scale, and high-impact work.
+7. NO placeholders like [Company Name] or [Insert Link]. Use "${company}" exactly or generic professional terms.
+8. Include a witty but professional closing line that makes them want to reply (e.g., "I'd love to show you how I can bring this same scale to ${company}." or something similarly polished).
+9. Body MUST be formatted using HTML <p> tags, keeping paragraphs very short (1-2 sentences max for skimming).`;
 
   const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
   if (!OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY is not defined in .env");
@@ -522,7 +527,7 @@ STRICT RULES:
   // Fallback if APIs fail
   return {
     subject: `Software Engineer Application | High Scale Product Architecture | Rishav Tarway`,
-    body: `<p>${greeting}</p><p>I hope you are doing well. My name is Rishav Tarway and I am reaching out because I have been following ${company} and appreciate the company's commitment to building highly scalable software architecture.</p><p>With my experience in backend optimization at Classplus and extensive quality automation during my IIIT Bangalore internship I am excited about the possibility of contributing to the ${company} engineering team.</p><p>I recently had success contributing to OpenPrinting where I was selected for Winter of Code 5.0 and successfully merged my <a href="https://github.com/OpenPrinting/fuzzing/pull/48">recent PR #48 at OpenPrinting</a>. Writing extensive fuzzing functions to find edge cases is really driving my passion to learn the in depth architecture of software and find their vulnerabilities.</p><p>I would be more than happy to contribute and connect with the amazing team at ${company}. I have attached my resume along with this.</p><p>Thank you and I hope to hear from you soon!</p>${SIGNATURE_HTML}`
+    body: `<p>${greeting},</p><p>I'm Rishav Tarway. I saw the opening at ${company} and wanted to reach out directly. I specialize in building and optimizing highly scalable software architecture.</p><p>For a quick background: I've completed 6 paid internships (3 onsite, 3 remote), most notably handling core backend optimization at Classplus. I've also spent the last 2 years deeply involved in Open Source, recently merging critical fuzzing architecture PRs for OpenPrinting (selected for Winter of Code 5.0).</p><p>I know you're likely skimming this, so I'll keep it brief. I have several proof-of-work links attached to my profile, but let me know exactly what kind of PRs or projects you'd like to see for your stack, and I'll send them over.</p><p>Would love to briefly chat about how I can bring this level of scale and engineering rigor to ${company}.</p><p>Best,</p>${SIGNATURE_HTML}`
   };
 }
 
