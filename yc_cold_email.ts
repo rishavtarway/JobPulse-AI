@@ -188,7 +188,7 @@ async function deepResearchCompany(company: string, originalMission: string): Pr
 
     const search1 = await searchWeb(`${company} startup founders YC mission problems solving funding`);
     await new Promise(r => setTimeout(r, 1000)); // be nice to DDG
-    const search2 = await searchWeb(`${company} startup team email contact hr career tech stack`);
+    const search2 = await searchWeb(`"${company}" startup founder CEO email contact careers hiring "founders@"`);
 
     const combinedSnippets = [...search1, ...search2].map(s => `Title: ${s.title}\nSnippet: ${s.snippet}\nLink: ${s.link}`).join("\n\n");
     const uniqueLinks = [...new Set([...search1, ...search2].map(s => s.link))];
@@ -200,8 +200,8 @@ ${combinedSnippets}
 
 Extract the following as a JSON object strictly following this format:
 {
-  "founder_names": "Names of founders (or 'Team')",
-  "contact_email": "Any found official or founder email (leave blank if strictly none)",
+  "founder_names": "Names of founders (or 'Team') - attempt to find their exact names.",
+  "contact_email": "Find the DIRECT founder email. DO NOT use generic info@ or hello@ emails. Look for founders@, careers@, jobs@, or actively deduce it using the founder's first name (e.g., firstname@companydomain.com) if you found the domain and founder name. Leave blank if totally unsure.",
   "deep_mission": "A 2-sentence summary of the core engineering problem they are solving, their mission, and recent funding/news if mentioned.",
   "tech_stack_or_values": "What technologies they seem to use, or what engineering traits they value."
 }`;
