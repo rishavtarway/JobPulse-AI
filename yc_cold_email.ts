@@ -3,6 +3,7 @@ import * as path from 'path';
 import { google } from 'googleapis';
 import nodemailer from 'nodemailer';
 
+// --- CONFIG & ENV ---
 const loadEnv = () => {
     try {
         const envPath = path.resolve(process.cwd(), '.env');
@@ -23,7 +24,9 @@ const ATTACHMENTS = [{
     filename: 'Rishav_Tarway_Resume.pdf',
     path: path.join(process.cwd(), 'resume', 'Rishav_Tarway_Resume.pdf')
 }];
+const LOGS_FILE = 'YC_RESEARCH_AGENT_LOGS.md';
 
+// --- GMAIL SETUP ---
 async function authorizeGmail() {
     const creds = JSON.parse(fs.readFileSync(CREDENTIALS_PATH, 'utf8'));
     const { client_secret, client_id, redirect_uris } = creds.installed || creds.web;
@@ -81,30 +84,50 @@ const SIGNATURE_HTML = `<br><br>
   <a href="https://github.com/rishavtarway">GitHub</a> | <a href="https://linkedin.com/in/rishav-tarway">LinkedIn</a> | <a href="https://tryhards.in/">Portfolio</a><br>
 </div>`;
 
-async function generateYCPolishedEmail(company: string, mission: string, contactName: string): Promise<{ subject: string, body: string }> {
-    const greeting = contactName === "Team" ? `Hi ${company} Team` : `Hi ${contactName}`;
-    const prompt = `
-Generate a highly polished, eye-catching cold email application to a startup founder/HR as valid JSON.
-Startup Name: "${company}"
-Mission/Context: "${mission}"
+// --- WEB SEARCH CAPABILITY ---
+async function searchWeb(query: string): Promise<{ title: string, snippet: string, link: string }[]> {
+    try {
+        const response = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
+            headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5"
+            }
+        });
+        const html = await response.text();
+        const results = [];
+        const resultBlobs = html.split('class="result__body"');
 
-STRICT RULES:
-1. Return JSON: {"subject": "...", "body": "..."}
-2. The email must be extremely punchy, designed for a 5-10 second skim by a busy Founder or HR (targeting high-growth startups like YC). It must grab attention immediately and never fail to get a reply.
-3. Tone: Confident, crisp, highly professional but modern (not generic or boring).
-4. Include these exact bragging points naturally, without sounding boastful:
-   - 2 years of Open Source contributions (including merged PRs in OpenPrinting).
-   - 6 paid internships (3 onsite, 3 remote).
-   - Backend optimization & architecture experience at Classplus scaling systems.
-5. Offer proof of work casually but confidently: "I have 5 links already shared on my profile, but let me know what specific tech stack PRs/links you want to see, and I will share them."
-6. Focus heavily on how you can impact their specific mission/company: "${mission}". Show them you understand what they are building.
-7. NO placeholders like [Company Name] or [Insert Link]. Use "${company}" exactly.
-8. Include a witty but professional closing line that makes them want to reply (e.g., "I'd love to briefly chat about how I can bring this same scale and engineering rigor to ${company}." or something similar).
-9. Body MUST be formatted using HTML <p> tags, keeping paragraphs very short (1-2 sentences max for skimming).
-10. At the end of the content before closing, casually but boldly suggest that if they hire you, you'll save them from buying more expensive SaaS tools because you build tools locally (to add a punchy hook).`;
+        for (let i = 1; i < resultBlobs.length; i++) {
+            const blob = resultBlobs[i];
+            const titleMatch = blob.match(/<h2 class="result__title">[\s\S]*?<a class="result__a"[^>]*>([\s\S]*?)<\/a>/i) ||
+                blob.match(/<a class="result__url" href="([^"]+)">([\s\S]*?)<\/a>/);
+            const snippetMatch = blob.match(/<a class="result__snippet[^>]+>([\s\S]*?)<\/a>/);
+            const linkMatch = blob.match(/href="([^"]+)"/);
 
+            if (titleMatch && snippetMatch && linkMatch) {
+                let link = linkMatch[1];
+                if (link.startsWith('//duckduckgo.com/l/?uddg=')) {
+                    link = decodeURIComponent(link.split('uddg=')[1].split('&')[0]);
+                }
+                const title = titleMatch[titleMatch.length - 1].replace(/<\/?[^>]+(>|$)/g, "").trim();
+                const snippet = snippetMatch[1].replace(/<\/?[^>]+(>|$)/g, "").trim();
+                results.push({ title, snippet, link });
+            }
+            if (results.length >= 6) break; // collect top 6
+        }
+        return results;
+    } catch (e) {
+        console.error("Search error:", e);
+        return [];
+    }
+}
+
+// --- AI INTELLIGENCE ---
+async function callAI(prompt: string, expectJson: boolean = false): Promise<any> {
     const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-    const fallbackModels = ["openrouter/free", "google/gemma-3-27b-it:free", "mistralai/mistral-7b-instruct:free"];
+    const fallbackModels = ["google/gemini-2.0-flash:free", "mistralai/mistral-7b-instruct:free", "openrouter/free"];
+
     let currentModelIdx = 0;
     while (currentModelIdx < fallbackModels.length) {
         try {
@@ -118,59 +141,98 @@ STRICT RULES:
             if (!response.ok) throw new Error(`API error: ${response.status}`);
 
             const result = await response.json();
-            const responseText = result.choices[0].message.content;
-            let parsed = { subject: "Engineering Application | Rishav Tarway", body: responseText };
+            const text = result.choices[0].message.content;
 
-            try {
-                let content = responseText.replace(/^```[a-z]*\n/, '').replace(/\n```$/, '').trim();
-                const jsonMatch = content.match(/\{[\s\S]*\}/);
-                if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
-                else parsed = JSON.parse(content);
-            } catch (e) {
-                let safeBody = responseText.replace(/\n\n/g, '</p><p>').replace(/\n/g, ' ');
-                parsed = { subject: `Engineering | ${company} | Rishav Tarway`, body: safeBody };
-            }
+            if (!expectJson) return text;
 
-            parsed.subject = parsed.subject.replace(/[,\[\]\(\)]/g, '');
-            return { subject: parsed.subject, body: `<p>${greeting},</p>${parsed.body}${SIGNATURE_HTML}` };
+            let content = text.replace(/^```[a-z]*\n/, '').replace(/\n```$/, '').trim();
+            const jsonMatch = content.match(/\{[\s\S]*\}/) || content.match(/\[[\s\S]*\]/);
+            if (jsonMatch) return JSON.parse(jsonMatch[0]);
+            return JSON.parse(content);
         } catch (e) {
             currentModelIdx++;
         }
     }
+    return null;
+}
+
+async function deepResearchCompany(company: string, originalMission: string): Promise<any> {
+    console.log(`\n🔍 Agent searching deep web for: ${company}...`);
+
+    const search1 = await searchWeb(`${company} startup founders YC mission problems solving funding`);
+    await new Promise(r => setTimeout(r, 1000)); // be nice to DDG
+    const search2 = await searchWeb(`${company} startup team email contact hr career tech stack`);
+
+    const combinedSnippets = [...search1, ...search2].map(s => `Title: ${s.title}\nSnippet: ${s.snippet}\nLink: ${s.link}`).join("\n\n");
+    const uniqueLinks = [...new Set([...search1, ...search2].map(s => s.link))];
+
+    const prompt = `Analyze the search results for the startup "${company}" and extract precise information.
+
+Search Results:
+${combinedSnippets}
+
+Extract the following as a JSON object strictly following this format:
+{
+  "founder_names": "Names of founders (or 'Team')",
+  "contact_email": "Any found official or founder email (leave blank if strictly none)",
+  "deep_mission": "A 2-sentence summary of the core engineering problem they are solving, their mission, and recent funding/news if mentioned.",
+  "tech_stack_or_values": "What technologies they seem to use, or what engineering traits they value."
+}`;
+
+    const parsed = await callAI(prompt, true) || {};
 
     return {
-        subject: `Software Engineer | High Scale Architecture | Rishav Tarway`,
-        body: `<p>${greeting},</p><p>I'm Rishav Tarway. I saw the great work being done at ${company} and wanted to reach out directly. I specialize in building and optimizing highly scalable software architecture.</p><p>For a quick background: I've completed 6 paid internships (3 onsite, 3 remote), most notably handling core backend optimization at Classplus. I've also spent the last 2 years deeply involved in Open Source, recently merging critical fuzzing architecture PRs for OpenPrinting.</p><p>Also, I'm the guy who builds internal tools from scratch locally, so you can probably cancel a few SaaS subscriptions if you hire me.</p><p>I know you're likely skimming this, so I'll keep it brief. I have several proof-of-work links attached to my profile, but let me know exactly what kind of PRs or projects you'd like to see for your stack, and I'll send them over.</p><p>Would love to chat about bringing this engineering rigor to ${company}.</p><p>Best,</p>${SIGNATURE_HTML}`
+        founders: parsed.founder_names || "Founding Team",
+        discoveredEmail: parsed.contact_email || "",
+        deepMission: parsed.deep_mission || originalMission || "Building high scale technology.",
+        techStack: parsed.tech_stack_or_values || "software engineering",
+        sources: uniqueLinks
     };
 }
 
-async function parseStartupsList(text: string): Promise<any[]> {
+async function generateAgenticDraft(company: string, research: any): Promise<{ subject: string, body: string }> {
+    const prompt = `
+Generate a highly polished, eye-catching cold email application to a startup founder/HR as valid JSON.
+Startup Name: "${company}"
+Founders/Contact: "${research.founders}"
+What they are solving/Mission (Deep Research): "${research.deepMission}"
+Tech/Values: "${research.techStack}"
+
+STRICT RULES:
+1. Return JSON: {"subject": "...", "body": "..."}
+2. The email must be extremely punchy, designed for a 5-10 second skim by a busy Founder (${research.founders}). Make it directly relevant to their specific mission: "${research.deepMission}".
+3. Tone: Confident, crisp, highly professional but modern, NOT generic.
+4. Praise/Appreciate: Briefly praise them for their recent work/funding/mission in this specific sector.
+5. Include these exact bragging points smoothly without boasting:
+   - 2 years of Open Source contributions (including merged PRs in OpenPrinting).
+   - 6 paid internships (3 onsite, 3 remote).
+   - Backend optimization & architecture experience at Classplus scaling systems.
+6. Offer proof of work casually but confidently: "I have 5 links already shared on my profile, but let me know what specific tech stack PRs/links you want to see, and I will share them."
+7. NO placeholders like [Company Name] or [Insert Link]. Use "${company}" exactly.
+8. Include a witty but professional closing line that makes them want to reply.
+9. At the end before closing, casually suggest that if they hire you, you'll save them from buying more expensive SaaS tools because you build tools locally (to add a punchy hook).
+10. Body MUST be formatted using HTML <p> tags, keeping paragraphs very short (1-2 sentences max format for skimming).`;
+
+    const parsed = await callAI(prompt, true);
+    if (parsed && parsed.subject && parsed.body) {
+        parsed.subject = parsed.subject.replace(/[,\[\]\(\)]/g, '');
+        return { subject: parsed.subject, body: parsed.body + SIGNATURE_HTML };
+    }
+
+    return {
+        subject: `Software Engineer | High Scale Architecture | Rishav Tarway`,
+        body: `<p>Hi ${research.founders},</p><p>I'm Rishav Tarway. I've been researching ${company} and am incredibly impressed by your mission: ${research.deepMission}. I specialize in building and optimizing highly scalable software architecture.</p><p>For a quick background: I've completed 6 paid internships (3 onsite, 3 remote), most notably handling core backend optimization at Classplus. I've also spent the last 2 years deeply involved in Open Source, recently merging critical fuzzing architecture PRs for OpenPrinting.</p><p>Also, I'm the guy who builds internal tools from scratch locally, so you can probably cancel a few SaaS subscriptions if you hire me.</p><p>I know you're likely skimming this, so I'll keep it brief. I have several proof-of-work links attached to my profile, but let me know exactly what kind of PRs or projects you'd like to see for your stack, and I'll send them over.</p><p>Would love to chat about bringing this engineering rigor to ${company}.</p><p>Best,</p>${SIGNATURE_HTML}`
+    };
+}
+
+async function parseRawStartupsInput(text: string): Promise<any[]> {
     const prompt = `Extract a list of startups from the following text. 
 Return ONLY a valid JSON array of objects. 
-Each object must have exactly these keys: "company" (string), "email" (string), "mission" (string, summarizing what they do or what they need).
-If an email is missing, leave it blank, but try to extract it.
+Each object must have exactly these keys: "company" (string), "email" (string, leave blank if missing), "context" (string, short summary of what they do, if available).
 
 Text input:
 ${text}`;
-
-    const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-    try {
-        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: { "Authorization": `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ model: "google/gemini-2.0-flash:free", messages: [{ role: "user", content: prompt }] })
-        });
-
-        if (response.ok) {
-            const result = await response.json();
-            const content = result.choices[0].message.content;
-            const match = content.match(/\[[\s\S]*\]/);
-            if (match) return JSON.parse(match[0]);
-        }
-    } catch (e) {
-        console.error("Failed to parse startups list:", e);
-    }
-    return [];
+    return await callAI(prompt, true) || [];
 }
 
 async function main() {
@@ -181,7 +243,7 @@ async function main() {
     }
 
     console.log("==================================================");
-    console.log("   🚀 STARTING YC COLD OUTREACH PROCESS");
+    console.log("   🚀 STARTING DEEP RESEARCH YC AGENT PROCESS");
     console.log("==================================================");
 
     const txt = fs.readFileSync(filePath, 'utf8');
@@ -190,35 +252,71 @@ async function main() {
         process.exit(1);
     }
 
-    console.log("🔍 Parsing startup list using AI...");
-    const startups = await parseStartupsList(txt);
+    console.log("🔍 Parsing baseline startup list using AI...");
+    const startups = await parseRawStartupsInput(txt);
 
     if (startups.length === 0) {
-        console.log("❌ No valid startups found with emails. Exiting.");
+        console.log("❌ No valid startups found. Exiting.");
         process.exit(1);
     }
 
-    console.log(`✅ Found ${startups.length} startup(s) to outreach.`);
+    console.log(`✅ Identified ${startups.length} startup(s) to research.`);
 
     console.log("🔐 Authenticating with Gmail...");
     const auth = await authorizeGmail();
     const gmail = google.gmail({ version: 'v1', auth });
 
+    // Initialize/Append Logs
+    let mdLog = `\n\n## YC Research Agent Run - ${new Date().toISOString()}\n`;
+
     for (let i = 0; i < startups.length; i++) {
-        const { company, email, mission } = startups[i];
-        if (!email || !company) {
-            console.log(`⚠️ Skipping entry ${i + 1}: Missing company or email.`);
-            continue;
+        let { company, email, context } = startups[i];
+        if (!company) continue;
+
+        console.log(`\n-------------------------------------------------------------`);
+        console.log(`[${i + 1}/${startups.length}] 🧠 Commencing Deep Research Agent for: ${company}`);
+
+        // 1. Deep Research
+        const research = await deepResearchCompany(company, context);
+        console.log(`   💡 Found Founders: ${research.founders}`);
+        console.log(`   💡 Found Mission: ${research.deepMission}`);
+
+        // Use discovered email if baseline is missing
+        const finalEmail = email || research.discoveredEmail;
+        if (!finalEmail) {
+            console.log(`   ⚠️ WARNING: Could not discover any email for ${company}. Moving to Tracker only.`);
+        } else {
+            console.log(`   📧 Target Email: ${finalEmail}`);
         }
 
-        console.log(`\n[${i + 1}/${startups.length}] Crafting premium outreach for ${company} (${email})...`);
-        const { subject, body } = await generateYCPolishedEmail(company, mission, "Team");
+        // 2. Draft the highly tailored pitch
+        console.log(`   ✍️ Drafting tailored pitch leveraging deep research...`);
+        const { subject, body } = await generateAgenticDraft(company, research);
 
+        // 3. Document in Markdown Log
+        mdLog += `### Startup: ${company}\n`;
+        mdLog += `**Contact**: ${research.founders} (${finalEmail || 'Unknown'})\n\n`;
+        mdLog += `**Agent Deep Research / Mission Extracted**:\n> ${research.deepMission}\n\n`;
+        mdLog += `**Detected Tech/Values**:\n> ${research.techStack}\n\n`;
+        mdLog += `**Sources (Verified Web Results)**:\n`;
+        research.sources.slice(0, 5).forEach((src: string) => {
+            mdLog += `- [${src}](${src})\n`;
+        });
+        mdLog += `\n**Tailored AI Draft Preview**: \n\`\`\`html\nSubject: ${subject}\n\n${body.replace(/<p>/g, '').replace(/<\/p>/g, '\n\n')}\n\`\`\`\n`;
+        mdLog += `---\n`;
+
+        // 4. Send to Gmail Drafts (if email exists)
+        if (finalEmail) {
+            try {
+                await createDraftInGmail(gmail, finalEmail, subject, body);
+                console.log(`   ✅ Tailored Draft created in Gmail for ${company}.`);
+            } catch (e: any) {
+                console.error(`   ❌ Failed to create draft:`, e.message);
+            }
+        }
+
+        // 5. Commit to Tracker Database
         try {
-            await createDraftInGmail(gmail, email, subject, body);
-            console.log(`   ✅ Draft created in Gmail for ${company}.`);
-
-            // Log to tracker
             const port = process.env.SERVER_PORT || '3000';
             await fetch(`http://127.0.0.1:${port}/api/applications`, {
                 method: 'POST',
@@ -226,22 +324,23 @@ async function main() {
                 body: JSON.stringify({
                     company: company,
                     role: "Software Engineer (Founding/Core)",
-                    channel: "YC Startup List",
-                    email: email,
-                    description: mission,
-                    status: 'applied'
+                    channel: "YC Research Agent",
+                    email: finalEmail || "No Email Discovered",
+                    description: `RESEARCH DATA:\nFounders: ${research.founders}\nMission: ${research.deepMission}\nTech: ${research.techStack}\n\nSources:\n${research.sources.slice(0, 3).join('\n')}`,
+                    status: finalEmail ? 'applied' : 'to_apply'
                 })
             });
-        } catch (e: any) {
-            console.error(`   ❌ Failed to create draft:`, e.message);
-        }
+        } catch (e) { }
 
         await new Promise(r => setTimeout(r, 4000));
     }
 
-    console.log("\n==================================================");
-    console.log(" 🎉 ALL DONE! YC Pitch drafts are ready in Gmail. ");
-    console.log("==================================================");
+    fs.appendFileSync(LOGS_FILE, mdLog);
+
+    console.log("\n=================================================================");
+    console.log(" 🎉 ALL DONE! Deep Research Pitches drafted. ");
+    console.log(` 📂 Review full deep-dive analyses in: ${LOGS_FILE}`);
+    console.log("=================================================================");
     process.exit(0);
 }
 
