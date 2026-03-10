@@ -142,10 +142,10 @@ async function callAI(prompt: string, expectJson: boolean = false): Promise<any>
     // High priority: NVIDIA Models (extremely high context / quality)
     // Low priority: OpenRouter Fallbacks
     const models = [
+        { provider: 'nvidia', id: 'meta/llama-3.1-70b-instruct' },
         { provider: 'nvidia', id: 'meta/llama-3.1-405b-instruct' },
-        { provider: 'nvidia', id: 'nvidia/llama-3.1-nemotron-70b-instruct' },
         { provider: 'openrouter', id: 'google/gemini-2.0-flash-lite-001' },
-        { provider: 'openrouter', id: 'cognitivecomputations/dolphin-mistral-24b-venice-edition:free' },
+        { provider: 'openrouter', id: 'meta-llama/llama-3.2-3b-instruct:free' },
         { provider: 'openrouter', id: 'openrouter/free' }
     ];
 
@@ -172,7 +172,7 @@ async function callAI(prompt: string, expectJson: boolean = false): Promise<any>
                 method: "POST",
                 headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
                 body: JSON.stringify({ model: target.id, messages: [{ role: "user", content: prompt }] }),
-                signal: AbortSignal.timeout(30000)
+                signal: AbortSignal.timeout(60000)
             });
 
             if (response.status === 429) {
