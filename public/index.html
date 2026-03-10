@@ -1046,7 +1046,8 @@
         // Check health
         setInterval(async () => {
             try {
-                const res = await fetch('http://127.0.0.1:3001/api/form-filler/status');
+                const url = `http://${window.location.hostname}:3001/api/form-filler/status`;
+                const res = await fetch(url);
                 const data = await res.json();
                 document.getElementById('ai-status').textContent = data.llm_available ? 'READY' : 'LLM ERROR';
                 document.getElementById('ai-status').style.color = data.llm_available ? 'var(--success)' : 'var(--danger)';

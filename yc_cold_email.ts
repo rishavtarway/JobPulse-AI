@@ -19,7 +19,7 @@ const loadEnv = () => {
 loadEnv();
 
 const TOKEN_PATH = 'token.json';
-const CREDENTIALS_PATH = 'credentials.json';
+const CREDENTIALS_PATH = 'credential.json';
 const ATTACHMENTS = [{
     filename: 'Rishav_Tarway_Resume.pdf',
     path: path.join(process.cwd(), 'resume', 'Rishav_Tarway_Resume.pdf')
@@ -92,7 +92,8 @@ async function searchWeb(query: string): Promise<{ title: string, snippet: strin
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
                 "Accept-Language": "en-US,en;q=0.5"
-            }
+            },
+            signal: AbortSignal.timeout(15000)
         });
         const html = await response.text();
         const results = [];
@@ -117,8 +118,8 @@ async function searchWeb(query: string): Promise<{ title: string, snippet: strin
             if (results.length >= 6) break; // collect top 6
         }
         return results;
-    } catch (e) {
-        console.error("Search error:", e);
+    } catch (e: any) {
+        console.error("   ⚠️ DDG Search error (or timeout):", e.message);
         return [];
     }
 }
@@ -126,18 +127,29 @@ async function searchWeb(query: string): Promise<{ title: string, snippet: strin
 // --- AI INTELLIGENCE ---
 async function callAI(prompt: string, expectJson: boolean = false): Promise<any> {
     const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-    const fallbackModels = ["google/gemini-2.0-flash:free", "mistralai/mistral-7b-instruct:free", "openrouter/free"];
+    if (!OPENROUTER_API_KEY) {
+        console.error("   ❌ ERROR: No OPENROUTER_API_KEY found in .env");
+        return null;
+    }
+
+    // Using more stable generic fallback models for OpenRouter free tier
+    const fallbackModels = ["openrouter/free", "google/gemma-3-27b-it:free", "mistralai/mistral-7b-instruct:free", "meta-llama/llama-3.2-1b-instruct:free"];
 
     let currentModelIdx = 0;
     while (currentModelIdx < fallbackModels.length) {
         try {
+            console.log(`   🤖 [Querying AI: ${fallbackModels[currentModelIdx]}]...`);
             const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
                 method: "POST",
                 headers: { "Authorization": `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
-                body: JSON.stringify({ model: fallbackModels[currentModelIdx], messages: [{ role: "user", content: prompt }] })
+                body: JSON.stringify({ model: fallbackModels[currentModelIdx], messages: [{ role: "user", content: prompt }] }),
+                signal: AbortSignal.timeout(30000)
             });
 
-            if (response.status === 429) { currentModelIdx++; continue; }
+            if (response.status === 429) {
+                console.log(`   ⚠️ Rate limited on ${fallbackModels[currentModelIdx]}, switching models...`);
+                currentModelIdx++; continue;
+            }
             if (!response.ok) throw new Error(`API error: ${response.status}`);
 
             const result = await response.json();
@@ -146,10 +158,25 @@ async function callAI(prompt: string, expectJson: boolean = false): Promise<any>
             if (!expectJson) return text;
 
             let content = text.replace(/^```[a-z]*\n/, '').replace(/\n```$/, '').trim();
-            const jsonMatch = content.match(/\{[\s\S]*\}/) || content.match(/\[[\s\S]*\]/);
-            if (jsonMatch) return JSON.parse(jsonMatch[0]);
-            return JSON.parse(content);
-        } catch (e) {
+            const objMatch = content.match(/\{[\s\S]*\}/);
+            const arrMatch = content.match(/\[[\s\S]*\]/);
+
+            let jsonString = content;
+            if (objMatch && arrMatch) {
+                jsonString = objMatch[0].length > arrMatch[0].length ? objMatch[0] : arrMatch[0];
+            } else if (objMatch) {
+                jsonString = objMatch[0];
+            } else if (arrMatch) {
+                jsonString = arrMatch[0];
+            }
+
+            try {
+                return JSON.parse(jsonString);
+            } catch (je) {
+                return JSON.parse(content);
+            }
+        } catch (e: any) {
+            console.log(`   ⚠️ Model failed (${e.message}), trying next...`);
             currentModelIdx++;
         }
     }
@@ -253,9 +280,16 @@ async function main() {
     }
 
     console.log("🔍 Parsing baseline startup list using AI...");
-    const startups = await parseRawStartupsInput(txt);
+    let startups: any = await parseRawStartupsInput(txt);
 
-    if (startups.length === 0) {
+    // Fallback if AI returned an object containing the array e.g. { "startups": [...] }
+    if (startups && !Array.isArray(startups)) {
+        if (startups.startups && Array.isArray(startups.startups)) startups = startups.startups;
+        else if (startups.companies && Array.isArray(startups.companies)) startups = startups.companies;
+        else startups = [];
+    }
+
+    if (!startups || !Array.isArray(startups) || startups.length === 0) {
         console.log("❌ No valid startups found. Exiting.");
         process.exit(1);
     }
