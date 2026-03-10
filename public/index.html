@@ -846,25 +846,34 @@
 
         async function fetchUpdate() {
             try {
-                const res = await fetch('/api/status');
+                const res = await fetch('/api/logs');
                 const data = await res.json();
 
                 // Update terminal
                 const term = document.getElementById('terminal');
-                if (data.logs && data.logs.length > lastLogIndex) {
-                    const newLogs = data.logs.slice(lastLogIndex);
-                    newLogs.forEach(line => {
-                        const formatted = line
-                            .replace(/\[PHASE (\d+)\]/g, '<b>[PHASE $1]</b>')
-                            .replace(/✅/g, '<i>✅</i>')
-                            .replace(/❌/g, '<span style="color:var(--danger)">❌</span>');
-                        term.innerHTML += formatted + '<br>';
-                    });
-                    lastLogIndex = data.logs.length;
-                    term.scrollTop = term.scrollHeight;
+                if (data.logs) {
+                    const logsStr = data.logs;
+                    if (logsStr.length > lastLogIndex) {
+                        const newLogs = logsStr.substring(lastLogIndex).split('\n');
+                        newLogs.forEach(line => {
+                            if (!line) return;
+                            const formatted = line
+                                .replace(/\[PHASE (\d+)\]/g, '<b>[PHASE $1]</b>')
+                                .replace(/✅/g, '<i>✅</i>')
+                                .replace(/❌/g, '<span style="color:var(--danger)">❌</span>')
+                                .replace(/🚀/g, '<i>🚀</i>')
+                                .replace(/⚠️/g, '<span style="color:#f59e0b">⚠️</span>')
+                                .replace(/🔑/g, '<i>🔑</i>')
+                                .replace(/🔐/g, '<i>🔐</i>')
+                                .replace(/💡/g, '<span style="color:#2dd4bf">💡</span>');
+                            term.innerHTML += formatted + '<br>';
+                        });
+                        lastLogIndex = logsStr.length;
+                        term.scrollTop = term.scrollHeight;
+                    }
                 }
 
-                if (data.status === 'idle' && !data.logs.includes('Exiting...')) {
+                if (!data.isRunning && !data.logs.includes('Exiting...')) {
                     clearInterval(pollInterval);
                     document.getElementById('btn-trigger').disabled = false;
                     document.getElementById('btn-trigger-yc').disabled = false;
@@ -876,13 +885,13 @@
                 }
 
                 // Handle OTP/Password visibility
-                if (data.needs_otp) {
+                if (data.otpRequired) {
                     document.getElementById('otp-box').style.display = 'block';
                 } else {
                     document.getElementById('otp-box').style.display = 'none';
                 }
 
-                if (data.needs_password) {
+                if (data.passwordRequired) {
                     document.getElementById('password-box').style.display = 'block';
                 } else {
                     document.getElementById('password-box').style.display = 'none';
@@ -893,7 +902,7 @@
 
         async function submitOtp() {
             const code = document.getElementById('otp-input').value;
-            await fetch('/api/otp', {
+            await fetch('/api/submit-otp', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ code })
@@ -903,7 +912,7 @@
 
         async function submitPassword() {
             const password = document.getElementById('password-input').value;
-            await fetch('/api/password', {
+            await fetch('/api/submit-password', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ password })
