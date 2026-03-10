@@ -185,6 +185,62 @@ Reply ONLY with "NO" if it's general chat, career guidance, spam, or a generic q
   return false; // Default to false if AI fails
 }
 
+async function extractCompanyName(text: string, email?: string): Promise<string> {
+  const genericDomains = ['gmail.com', 'outlook.com', 'yahoo.com', 'hotmail.com', 'icloud.com', 'protonmail.com', 'me.com'];
+
+  if (email) {
+    const domain = email.split('@')[1]?.toLowerCase();
+    if (domain && !genericDomains.includes(domain)) {
+      const name = domain.split('.')[0];
+      return name.charAt(0).toUpperCase() + name.slice(1);
+    }
+  }
+
+  // Ask AI to find company name in text
+  const prompt = `Extract the official company name from this job posting.
+Message: "${text.substring(0, 1000)}"
+Reply ONLY with the company name. If no specific company name is found, reply ONLY with "Hiring Team".`;
+
+  const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+  const models = ["google/gemini-2.0-flash:free", "mistralai/mistral-7b-instruct:free"];
+
+  for (const model of models) {
+    try {
+      const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        const name = data.choices[0].message.content.trim();
+        if (name && name.length < 50) return name;
+      }
+    } catch (e) { }
+  }
+  return "Hiring Team";
+}
+
+const APPS_FILE = 'applications.json';
+
+function isAlreadyApplied(telegramId: string, channel: string): boolean {
+  try {
+    if (fs.existsSync(APPS_FILE)) {
+      const apps = JSON.parse(fs.readFileSync(APPS_FILE, 'utf8'));
+      return apps.some((app: any) => app.telegramId === telegramId && app.channel === channel);
+    }
+  } catch (e) {
+    console.error("Error checking applications.json:", e);
+  }
+  return false;
+}
+
 async function extractNewJobs() {
   let state: any = { channelLastIds: {} };
   if (fs.existsSync(STATE_FILE)) {
@@ -213,7 +269,8 @@ async function extractNewJobs() {
   for (const targetChannel of TARGET_CHANNELS) {
     console.log(`\n📡 Scanning Channel: ${targetChannel.name} (${targetChannel.id})...`);
 
-    let lastProcessedId = state.channelLastIds[targetChannel.id] || 2540000000; // Default fallback to process some history
+    // fallback ID 2600000000 is roughly from last few days
+    let lastProcessedId = state.channelLastIds[targetChannel.id] || 2600000000;
 
     // Force TDLib to sync the chat
     try {
@@ -234,6 +291,12 @@ async function extractNewJobs() {
 
       for (const m of batch) {
         if (m.id > lastProcessedId && !seenIds.has(m.id)) {
+          // CHECK IF ALREADY IN TRACKER
+          if (isAlreadyApplied(m.id.toString(), targetChannel.name)) {
+            // If already applied, we still update the seen IDs but skip adding to work list
+            seenIds.add(m.id);
+            continue;
+          }
           newMessages.push(m);
           seenIds.add(m.id);
         }
@@ -267,9 +330,10 @@ async function extractNewJobs() {
       const linkMatch = text.match(/(https?:\/\/[^\s]+)/i);
 
       if (emailMatch || linkMatch) {
-        // Even if it has a link/email, verify it's a real JOB posting and not a user asking a question
         const isJob = await isRealJobPosting(text);
         if (!isJob) continue;
+
+        const company = await extractCompanyName(text, emailMatch ? emailMatch[1] : undefined);
 
         if (emailMatch) {
           allParsedJobs.push({
@@ -277,15 +341,21 @@ async function extractNewJobs() {
             channel: targetChannel.name,
             date: new Date(m.date * 1000).toISOString(),
             text: text,
-            email: emailMatch[1]
+            email: emailMatch[1],
+            company: company,
+            link: linkMatch ? linkMatch[1] : null // STORE LINK IF PRESENT
           });
-        } else if (linkMatch) {
+        }
+
+        // Always add to manual links if a link is present, even if email is there
+        if (linkMatch) {
           allManualJobs.push({
             id: m.id.toString(),
             channel: targetChannel.name,
             date: new Date(m.date * 1000).toISOString(),
             text: text,
-            link: linkMatch[1]
+            link: linkMatch[1],
+            company: company
           });
         }
       }
@@ -315,17 +385,16 @@ async function extractNewJobs() {
     for (const job of allManualJobs) {
       try {
         const port = process.env.SERVER_PORT || '3000';
-        let company = "Link Application";
-        const urlMatch = job.link.match(/https?:\/\/(?:www\.)?([^./]+)/i);
-        if (urlMatch) company = urlMatch[1].charAt(0).toUpperCase() + urlMatch[1].slice(1);
+        const company = await extractCompanyName(job.text);
 
         await fetch(`http://127.0.0.1:${port}/api/applications`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            company: company,
+            company: job.company || "Link Application",
             role: "Software Engineer",
             channel: job.channel,
+            telegramId: job.id,
             link: job.link,
             description: job.text,
             status: 'to_apply'
@@ -359,22 +428,22 @@ function extractName(email: string, text: string): string {
 }
 
 async function generateEmailContent(jobText: string, company: string, contactName: string): Promise<{ subject: string, body: string }> {
-  const greeting = contactName === "Team" ? `Hi Team ${company}` : `Hi ${contactName}`;
-  const prompt = `
-Generate a cold email application as exactly JSON. Do not write any other text.
-Job Description: "${jobText}"
-Company Name: ${company}
+  const isGenericCompany = company === "Hiring Team" || company === "your company";
+  const greeting = contactName === "Team" ? `Hi ${company}` : `Hi ${contactName}`;
 
-MUST follow these STRICT RULES:
-1. ONLY return a JSON object with two keys: "subject" and "body"
-2. "subject" must be in format: "<Role Name> Application | <Catchy 3-word phrase> | Rishav Tarway"
-3. "body" must be exactly 3 paragraphs formatted with HTML <p> tags.
-4. Paragraph 1: Start with "I hope you are doing well. My name is Rishav Tarway and I am reaching out because I have been following ${company} and appreciate the company's commitment to <extract 1 core technical focus of this company from job desc>."
-5. Paragraph 2: "With my experience in <mention 1-2 skills from the job desc that match Classplus or IIIT Bangalore or Franchizerz internships> I am excited about the possibility of contributing to the ${company} engineering team."
-6. Paragraph 3: "I recently had success contributing to OpenPrinting where I was selected for Winter of Code 5.0 and successfully merged my <a href='https://github.com/OpenPrinting/fuzzing/pull/48'>recent PR #48 at OpenPrinting</a>. Writing extensive fuzzing functions to find edge cases is really driving my passion to learn the in depth architecture of software and find their vulnerabilities making me a perfect fit for this role."
-7. Paragraph 4: "I would be more than happy to contribute and connect with the amazing team at ${company}. I have attached my resume along with this."
-8. Paragraph 5: "Thank you and I hope to hear from you soon!"
-9. NO signature or greeting in the body. Only return flat valid JSON.`;
+  const prompt = `
+Generate a professional cold email application as valid JSON.
+Job Description: "${jobText}"
+Target Company: ${company}
+
+STRICT RULES:
+1. Return JSON: {"subject": "...", "body": "..."}
+2. Paragraph 1: Mention passion for the role/tech instead of focusing purely on "following the company" if company name is unknown. 
+3. Mention rishav tarway, IIIT Bangalore internship, Classplus internship.
+4. Mention fuzzing PR at OpenPrinting.
+5. NO placeholders like [Company Name]. Use "${company}" exactly or generic professional terms.
+6. Body must be exactly 3 paragraphs in HTML <p> tags.
+7. Focus on skills matching the job description.`;
 
   const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
   if (!OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY is not defined in .env");
@@ -536,8 +605,7 @@ async function main() {
 
   for (let i = 0; i < newJobs.length; i++) {
     const job = newJobs[i];
-    const domainMatch = job.email.match(/@([a-zA-Z0-9.-]+)\./);
-    const companyName = domainMatch ? domainMatch[1].charAt(0).toUpperCase() + domainMatch[1].slice(1) : "your company";
+    const companyName = await extractCompanyName(job.text, job.email);
     const contactName = extractName(job.email, job.text);
 
     console.log(`\n[${i + 1}/${newJobs.length}] Drafting for ${companyName} (${job.email})`);
@@ -560,7 +628,9 @@ async function main() {
             company: companyName,
             role: "Software Engineer",
             channel: job.channel,
+            telegramId: job.id,
             email: job.email,
+            link: job.link || null, // LOG LINK IF IT HAD BOTH
             description: job.text,
             status: 'applied'
           })

@@ -993,9 +993,12 @@
                             <div class="task-meta">${dateStr} ${app.channel ? `<span class="channel-badge ${chanClass}">${app.channel}</span>` : ''}</div>
                             <h3>${app.company}</h3>
                             <p>${app.role} — <span class="status-${app.status}">${currentStatus.name}</span></p>
+                            ${app.email ? `<p style="font-size:11px; color:var(--muted); margin-bottom: 5px;">📧 ${app.email}</p>` : ''}
                             ${progressHtml}
-                            ${app.notes ? `<div class="task-desc" style="margin-top:10px; opacity:0.8">📝 ${app.notes}</div>` : ''}
-                            ${app.link ? `<a href="${app.link}" target="_blank" class="btn-extension" style="margin-top:10px; font-size:10px;" onclick="event.stopPropagation()">🔗 Open Form / Link</a>` : ''}
+                            <div class="task-desc" style="margin-top:10px; font-size:11px; opacity:0.7; max-height: 100px; overflow-y: auto;">
+                                ${app.description ? `📝 ${app.description.substring(0, 300)}...` : (app.notes ? `📝 ${app.notes}` : '')}
+                            </div>
+                            ${app.link ? `<a href="${app.link}" target="_blank" class="btn-extension" style="margin-top:10px; background: var(--accent); color: white; display: inline-flex; align-items: center; gap: 5px;" onclick="event.stopPropagation()">🔗 Open Application Link</a>` : ''}
                         </div>
                         <div style="font-size:20px; color:var(--muted)">⚙️</div>
                     </div>

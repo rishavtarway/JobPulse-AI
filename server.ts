@@ -136,12 +136,14 @@ app.get('/api/applications', (req, res) => {
 });
 
 app.post('/api/applications', (req, res) => {
-    const { company, role, email, link, description, status = 'applied' } = req.body;
+    const { company, role, email, link, description, status = 'applied', telegramId, channel } = req.body;
     if (!company) return res.status(400).json({ error: 'Company is required' });
 
     const apps = readApps();
     const newApp = {
         id: Date.now().toString(),
+        telegramId: telegramId || null,
+        channel: channel || null,
         company,
         role: role || 'Software Engineer',
         email: email || '',
