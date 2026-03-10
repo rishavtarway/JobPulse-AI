@@ -132,33 +132,52 @@ async function searchWeb(query: string): Promise<{ title: string, snippet: strin
 // --- AI INTELLIGENCE ---
 async function callAI(prompt: string, expectJson: boolean = false): Promise<any> {
     const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-    if (!OPENROUTER_API_KEY) {
-        console.error("   ❌ ERROR: No OPENROUTER_API_KEY found in .env");
+    const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY;
+
+    if (!OPENROUTER_API_KEY && !NVIDIA_API_KEY) {
+        console.error("   ❌ ERROR: No API keys found in .env");
         return null;
     }
 
-    // Using the most robust free models available on OpenRouter
-    const fallbackModels = [
-        "google/gemini-flash-1.5",
-        "meta-llama/llama-3.1-8b-instruct",
-        "openai/gpt-3.5-turbo",
-        "openrouter/free"
+    // High priority: NVIDIA Models (extremely high context / quality)
+    // Low priority: OpenRouter Fallbacks
+    const models = [
+        { provider: 'nvidia', id: 'meta/llama-3.1-405b-instruct' },
+        { provider: 'nvidia', id: 'nvidia/llama-3.1-nemotron-70b-instruct' },
+        { provider: 'openrouter', id: 'google/gemini-2.0-flash-lite-001' },
+        { provider: 'openrouter', id: 'cognitivecomputations/dolphin-mistral-24b-venice-edition:free' },
+        { provider: 'openrouter', id: 'openrouter/free' }
     ];
 
-    let currentModelIdx = 0;
-    while (currentModelIdx < fallbackModels.length) {
+    let currentIdx = 0;
+    while (currentIdx < models.length) {
+        const target = models[currentIdx];
         try {
-            console.log(`   🤖 [Querying AI: ${fallbackModels[currentModelIdx]}]...`);
-            const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            console.log(`   🤖 [Querying ${target.provider}: ${target.id}]...`);
+
+            let url = "";
+            let key = "";
+
+            if (target.provider === 'nvidia') {
+                url = "https://integrate.api.nvidia.com/v1/chat/completions";
+                key = NVIDIA_API_KEY || "";
+            } else {
+                url = "https://openrouter.ai/api/v1/chat/completions";
+                key = OPENROUTER_API_KEY || "";
+            }
+
+            if (!key) { currentIdx++; continue; }
+
+            const response = await fetch(url, {
                 method: "POST",
-                headers: { "Authorization": `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
-                body: JSON.stringify({ model: fallbackModels[currentModelIdx], messages: [{ role: "user", content: prompt }] }),
+                headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
+                body: JSON.stringify({ model: target.id, messages: [{ role: "user", content: prompt }] }),
                 signal: AbortSignal.timeout(30000)
             });
 
             if (response.status === 429) {
-                console.log(`   ⚠️ Rate limited on ${fallbackModels[currentModelIdx]}, switching models...`);
-                currentModelIdx++; continue;
+                console.log(`   ⚠️ Rate limited on ${target.id}, switching...`);
+                currentIdx++; continue;
             }
             if (!response.ok) {
                 const errText = await response.text();
@@ -186,13 +205,12 @@ async function callAI(prompt: string, expectJson: boolean = false): Promise<any>
             try {
                 return JSON.parse(jsonString);
             } catch (je) {
-                // Second attempt: clean markdown formatting more aggressively
                 const cleaner = jsonString.replace(/```json/g, '').replace(/```/g, '').trim();
                 try { return JSON.parse(cleaner); } catch (je2) { throw new Error("Invalid JSON returned"); }
             }
         } catch (e: any) {
             console.log(`   ⚠️ Model failed (${e.message}), trying next...`);
-            currentModelIdx++;
+            currentIdx++;
         }
     }
     return null;
@@ -261,14 +279,15 @@ Extract the following as a JSON object strictly following this format. IF YOU CA
     if (discoveredEmail.toLowerCase().includes("n/a") || discoveredEmail.toLowerCase().includes("not found")) discoveredEmail = "";
 
     // Deep fallback search for email if not found in first pass, but founder is known
-    if ((!discoveredEmail || discoveredEmail.includes('info@') || discoveredEmail.includes('hello@') || discoveredEmail.length < 5) && founders !== "Founding Team" && founders.length > 2) {
-        console.log(`   🕵️‍♂️ Doing deeper targeted scan for ${founders}'s exact email...`);
-        const search3 = await searchWeb(`"${founders}" "${company}" "@" email contact`);
+    if ((!discoveredEmail || String(discoveredEmail).includes('info@') || String(discoveredEmail).includes('hello@') || String(discoveredEmail).length < 5) && founders !== "Founding Team" && founders.length > 2) {
+        const focusedFounders = founders.split(/[,&]/).slice(0, 2).join(' ').trim();
+        console.log(`   🕵️‍♂️ Doing deeper targeted scan for ${focusedFounders}'s exact email...`);
+        const search3 = await searchWeb(`"${focusedFounders}" "${company}" "@" email contact founders`);
         const snippets3 = search3.map(s => `Title: ${s.title}\nSnippet: ${s.snippet}\nLink: ${s.link}`).join("\n\n");
         const uniqueLinks3 = [...new Set(search3.map(s => s.link))];
         uniqueLinks.push(...uniqueLinks3);
 
-        const emailPrompt = `Analyze these deep search results and find the exact email for ${founders} at ${company}.
+        const emailPrompt = `Analyze these deep search results and find the exact email for ${focusedFounders} at ${company}.
         
 Search Results:
 ${snippets3}
@@ -278,8 +297,9 @@ Return ONLY a JSON object:
 Ignore info@ or support@. We want founders@, careers@, or name@domain.com.`;
 
         const emailParsed = await callAI(emailPrompt, true) || {};
-        if (emailParsed.contact_email && !emailParsed.contact_email.includes('info@')) {
-            discoveredEmail = emailParsed.contact_email;
+        const foundEmail = String(emailParsed.contact_email || "");
+        if (foundEmail && foundEmail.length > 5 && !foundEmail.includes('info@')) {
+            discoveredEmail = foundEmail;
             console.log(`   🎯 Deep scan successful: Found ${discoveredEmail}`);
         }
     }

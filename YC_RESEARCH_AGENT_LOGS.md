@@ -119,3 +119,42 @@ Looking forward to your thoughts.
 </div>
 ```
 ---
+
+
+## YC Research Agent Run - 2026-03-10T06:51:46.344Z
+### Startup: Runlayer
+**Contact**: Andy Berman, Vitor Balocco, Tal Peretz (andy@runlayer.com)
+
+**Agent Deep Research / Mission Extracted**:
+> Runlayer aims to make AI secure, compliant, and fully connected for enterprises by solving a technical debt in the industry (initially mentioned as 'No auth, no audit trails, no governance'). They've raised over $200M cumulatively and built the platform that many others are trying to copy.
+
+**Detected Tech/Values**:
+> AI-native, MCP, OpenClaw, Enterprise Infrastructure, Expertise in AI security (Best-in-class identities, seasoned founding members)
+
+**Sources (Verified Web Results)**:
+- [https://www.runlayer.com/about#careers](https://www.runlayer.com/about#careers)
+
+**Tailored AI Draft Preview**: 
+```html
+Subject: Excited to Help Runlayer Secure AI: Let's Talk!
+
+Hi Andy, Vitor, and Tal,
+
+ I'm impressed with Runlayer's mission to make AI secure, compliant, and fully connected for enterprises. Your platform, backed by over $200M and best-in-class identities, is setting the industry standard.
+
+ I've spent 2 years contributing to Open Source, 6 paid internships, and optimized architectures at Classplus. Let me know what tech stack PRs/links you want to see!
+
+ If you hire me, I'll save you from costly SaaS tools by building locally. Can't wait to discuss how I can contribute to Runlayer!
+
+ Best, [Your Name]
+
+ P.S. Looking forward to securing AI with Runlayer!
+
+<br><br>
+<div style="font-family: Arial, sans-serif; font-size: 14px; color: #333;">
+  <strong>Rishav Tarway</strong><br>
+  Software Development Engineer<br>
+  <a href="https://github.com/rishavtarway">GitHub</a> | <a href="https://linkedin.com/in/rishav-tarway">LinkedIn</a> | <a href="https://tryhards.in/">Portfolio</a><br>
+</div>
+```
+---
