@@ -432,23 +432,18 @@ async function generateEmailContent(jobText: string, company: string, contactNam
   const greeting = contactName === "Team" ? `Hi ${company}` : `Hi ${contactName}`;
 
   const prompt = `
-Generate a highly polished, eye-catching cold email application as valid JSON.
+Generate a professional cold email application as valid JSON.
 Job Description: "${jobText}"
 Target Company: ${company}
 
 STRICT RULES:
 1. Return JSON: {"subject": "...", "body": "..."}
-2. The email must be extremely punchy, designed for a 5-10 second skim by a busy Founder or HR (especially targeting YC 2024/2025 startups). It must grab attention immediately and never fail to get a reply.
-3. Tone: Confident, crisp, highly professional but modern (not generic or boring).
-4. Include these exact bragging points naturally, without sounding boastful:
-   - 2 years of Open Source contributions (including merged PRs in OpenPrinting).
-   - 6 paid internships (3 onsite, 3 remote).
-   - Backend optimization & architecture experience at Classplus scaling systems.
-5. Offer proof of work casually but confidently: "I have 5 links already shared on my profile, but let me know what specific tech stack PRs/links you want to see, and I will share them."
-6. If the company is unknown or generic, focus heavily on the tech stack, scale, and high-impact work.
-7. NO placeholders like [Company Name] or [Insert Link]. Use "${company}" exactly or generic professional terms.
-8. Include a witty but professional closing line that makes them want to reply (e.g., "I'd love to show you how I can bring this same scale to ${company}." or something similarly polished).
-9. Body MUST be formatted using HTML <p> tags, keeping paragraphs very short (1-2 sentences max for skimming).`;
+2. Paragraph 1: Mention passion for the role/tech instead of focusing purely on "following the company" if company name is unknown. 
+3. Mention rishav tarway, IIIT Bangalore internship, Classplus internship.
+4. Mention fuzzing PR at OpenPrinting.
+5. NO placeholders like [Company Name]. Use "${company}" exactly or generic professional terms.
+6. Body must be exactly 3 paragraphs in HTML <p> tags.
+7. Focus on skills matching the job description.`;
 
   const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
   if (!OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY is not defined in .env");
@@ -527,7 +522,99 @@ STRICT RULES:
   // Fallback if APIs fail
   return {
     subject: `Software Engineer Application | High Scale Product Architecture | Rishav Tarway`,
-    body: `<p>${greeting},</p><p>I'm Rishav Tarway. I saw the opening at ${company} and wanted to reach out directly. I specialize in building and optimizing highly scalable software architecture.</p><p>For a quick background: I've completed 6 paid internships (3 onsite, 3 remote), most notably handling core backend optimization at Classplus. I've also spent the last 2 years deeply involved in Open Source, recently merging critical fuzzing architecture PRs for OpenPrinting (selected for Winter of Code 5.0).</p><p>I know you're likely skimming this, so I'll keep it brief. I have several proof-of-work links attached to my profile, but let me know exactly what kind of PRs or projects you'd like to see for your stack, and I'll send them over.</p><p>Would love to briefly chat about how I can bring this level of scale and engineering rigor to ${company}.</p><p>Best,</p>${SIGNATURE_HTML}`
+    body: `<p>${greeting}</p><p>I hope you are doing well. My name is Rishav Tarway and I am reaching out because I have been following ${company} and appreciate the company's commitment to building highly scalable software architecture.</p><p>With my experience in backend optimization at Classplus and extensive quality automation during my IIIT Bangalore internship I am excited about the possibility of contributing to the ${company} engineering team.</p><p>I recently had success contributing to OpenPrinting where I was selected for Winter of Code 5.0 and successfully merged my <a href="https://github.com/OpenPrinting/fuzzing/pull/48">recent PR #48 at OpenPrinting</a>. Writing extensive fuzzing functions to find edge cases is really driving my passion to learn the in depth architecture of software and find their vulnerabilities.</p><p>I would be more than happy to contribute and connect with the amazing team at ${company}. I have attached my resume along with this.</p><p>Thank you and I hope to hear from you soon!</p>${SIGNATURE_HTML}`
+  };
+}
+
+export async function generateYCPolishedEmail(company: string, mission: string, contactName: string): Promise<{ subject: string, body: string }> {
+  const greeting = contactName === "Team" ? `Hi ${company} Team` : `Hi ${contactName}`;
+
+  const prompt = `
+Generate a highly polished, eye-catching cold email application to a startup founder/HR as valid JSON.
+Startup Name: "${company}"
+Mission/Context: "${mission}"
+
+STRICT RULES:
+1. Return JSON: {"subject": "...", "body": "..."}
+2. The email must be extremely punchy, designed for a 5-10 second skim by a busy Founder or HR (targeting high-growth startups like YC). It must grab attention immediately and never fail to get a reply.
+3. Tone: Confident, crisp, highly professional but modern (not generic or boring).
+4. Include these exact bragging points naturally, without sounding boastful:
+   - 2 years of Open Source contributions (including merged PRs in OpenPrinting).
+   - 6 paid internships (3 onsite, 3 remote).
+   - Backend optimization & architecture experience at Classplus scaling systems.
+5. Offer proof of work casually but confidently: "I have 5 links already shared on my profile, but let me know what specific tech stack PRs/links you want to see, and I will share them."
+6. Focus heavily on how you can impact their specific mission/company: "${mission}". Show them you understand what they are building.
+7. NO placeholders like [Company Name] or [Insert Link]. Use "${company}" exactly.
+8. Include a witty but professional closing line that makes them want to reply (e.g., "I'd love to briefly chat about how I can bring this same scale and engineering rigor to ${company}." or something similar).
+9. Body MUST be formatted using HTML <p> tags, keeping paragraphs very short (1-2 sentences max for skimming).
+10. At the end of the content before closing, casually but boldly suggest that if they hire you, you'll save them from buying more expensive SaaS tools because you build tools locally (to add a punchy hook).`;
+
+  const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+  if (!OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY is not defined in .env");
+
+  const fallbackModels = ["openrouter/free", "google/gemma-3-27b-it:free", "mistralai/mistral-7b-instruct:free", "meta-llama/llama-3.2-1b-instruct:free"];
+  let currentModelIdx = 0;
+  let retries = 3;
+
+  while (retries > 0 && currentModelIdx < fallbackModels.length) {
+    try {
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "http://localhost:3000",
+          "X-OpenRouter-Title": "Auto Apply Bot"
+        },
+        body: JSON.stringify({
+          model: fallbackModels[currentModelIdx],
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+
+      if (response.status === 429 || response.status === 402) {
+        currentModelIdx++;
+        if (currentModelIdx >= fallbackModels.length) {
+          await new Promise(r => setTimeout(r, 15000));
+          currentModelIdx = 0;
+          retries--;
+        }
+        continue;
+      }
+
+      if (!response.ok) throw new Error(`API error: ${response.status}`);
+
+      const result = await response.json();
+      const responseText = result.choices[0].message.content;
+
+      let parsed = { subject: "Engineering Application | Rishav Tarway", body: responseText };
+      try {
+        let content = responseText.replace(/^```[a-z]*\n/, '').replace(/\n```$/, '').trim();
+        if (content.startsWith('```')) content = content.substring(3).trim();
+        if (content.startsWith('json\n')) content = content.substring(5).trim();
+        if (content.endsWith('```')) content = content.substring(0, content.length - 3).trim();
+
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
+        else if (content.startsWith("{")) parsed = JSON.parse(content);
+      } catch (jsonErr) {
+        let safeBody = responseText.replace(/\n\n/g, '</p><p>').replace(/\n/g, ' ');
+        if (!safeBody.startsWith('<p>')) safeBody = '<p>' + safeBody + '</p>';
+        parsed = { subject: `Engineering | ${company} | Rishav Tarway`, body: safeBody };
+      }
+
+      parsed.subject = (parsed.subject || `Engineering | ${company} | Rishav Tarway`).replace(/[,\[\]\(\)]/g, '');
+      parsed.body = (parsed.body || parsed.subject).replace(/[,\[\]\(\)]/g, '');
+
+      return { subject: parsed.subject, body: `<p>${greeting},</p>${parsed.body}${SIGNATURE_HTML}` };
+    } catch (error: any) {
+      currentModelIdx++;
+    }
+  }
+
+  return {
+    subject: `Software Engineer | High Scale Architecture | Rishav Tarway`,
+    body: `<p>${greeting},</p><p>I'm Rishav Tarway. I saw the great work being done at ${company} and wanted to reach out directly. I specialize in building and optimizing highly scalable software architecture.</p><p>For a quick background: I've completed 6 paid internships (3 onsite, 3 remote), most notably handling core backend optimization at Classplus. I've also spent the last 2 years deeply involved in Open Source, recently merging critical fuzzing architecture PRs for OpenPrinting.</p><p>Also, I'm the guy who builds internal tools from scratch locally, so you can probably cancel a few SaaS subscriptions if you hire me.</p><p>I know you're likely skimming this, so I'll keep it brief. I have several proof-of-work links attached to my profile, but let me know exactly what kind of PRs or projects you'd like to see for your stack, and I'll send them over.</p><p>Would love to chat about bringing this engineering rigor to ${company}.</p><p>Best,</p>${SIGNATURE_HTML}`
   };
 }
 
@@ -604,7 +691,7 @@ async function main() {
   const newJobs = await extractNewJobs();
 
   // Phase 2: Generate & Upload
-  console.log(`\n🚀 [PHASE 2] Connecting to Gmail and processing ${newJobs.length} new jobs...`);
+  console.log(`\n🚀[PHASE 2] Connecting to Gmail and processing ${newJobs.length} new jobs...`);
   const auth = await authorizeGmail();
   const gmail = google.gmail({ version: 'v1', auth });
 
@@ -613,7 +700,7 @@ async function main() {
     const companyName = await extractCompanyName(job.text, job.email);
     const contactName = extractName(job.email, job.text);
 
-    console.log(`\n[${i + 1}/${newJobs.length}] Drafting for ${companyName} (${job.email})`);
+    console.log(`\n[${i + 1}/${newJobs.length}] Drafting for ${companyName}(${job.email})`);
 
     // 1. Generate text via OpenRouter
     const { subject, body } = await generateEmailContent(job.text, companyName, contactName);

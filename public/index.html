@@ -645,6 +645,16 @@
                 </div>
             </div>
 
+            <div class="glass-card" style="margin-top: 16px;">
+                <div class="section-label">YC Pitch Engine</div>
+                <textarea id="yc-text-input" placeholder="Paste raw text of startup names, emails, and context here..."
+                    style="width:100%; height:100px; padding:12px; background:var(--card); border:1px solid var(--border); border-radius:12px; color:#fff; font-family:inherit; font-size:12px; margin-bottom:12px; resize:vertical;"></textarea>
+                <button class="action-button" id="btn-trigger-yc" onclick="triggerYCScript()"
+                    style="background:var(--accent-bright); color:#fff; font-size:12px; width:100%;">
+                    🚀 DRAFT YC PITCHES
+                </button>
+            </div>
+
             <div id="otp-box">
                 <div style="font-family:var(--font-heading); font-weight:700; color:#f59e0b;">Verification Required
                 </div>
@@ -766,8 +776,10 @@
 
         async function triggerScript() {
             const btn = document.getElementById('btn-trigger');
+            const btnYc = document.getElementById('btn-trigger-yc');
             const stopBtn = document.getElementById('btn-stop');
             btn.disabled = true;
+            btnYc.disabled = true;
             btn.innerHTML = '✨ EXECUTING ENGINE...';
             stopBtn.style.display = 'flex';
             document.getElementById('terminal').innerHTML = '<b>[System]</b> Spawning worker process...\n';
@@ -778,6 +790,41 @@
             } catch (e) {
                 showToast('Failed to trigger process', 'danger');
                 btn.disabled = false;
+                btnYc.disabled = false;
+                stopBtn.style.display = 'none';
+            }
+        }
+
+        async function triggerYCScript() {
+            const btnYc = document.getElementById('btn-trigger-yc');
+            const btn = document.getElementById('btn-trigger');
+            const stopBtn = document.getElementById('btn-stop');
+            const textInput = document.getElementById('yc-text-input').value;
+
+            if (!textInput.trim()) {
+                showToast('Please paste startup text first!', 'danger');
+                return;
+            }
+
+            btn.disabled = true;
+            btnYc.disabled = true;
+            btnYc.innerHTML = '🚀 CRAFTING PITCHES...';
+            stopBtn.style.display = 'flex';
+            document.getElementById('terminal').innerHTML = '<b>[System]</b> Spawning YC Outreach process...\n';
+
+            try {
+                const res = await fetch('/api/trigger-yc', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: textInput })
+                });
+                startPolling();
+                document.getElementById('yc-text-input').value = ''; // clear upon success
+            } catch (e) {
+                showToast('Failed to trigger YC process', 'danger');
+                btn.disabled = false;
+                btnYc.disabled = false;
+                btnYc.innerHTML = '🚀 DRAFT YC PITCHES';
                 stopBtn.style.display = 'none';
             }
         }
@@ -820,7 +867,9 @@
                 if (data.status === 'idle' && !data.logs.includes('Exiting...')) {
                     clearInterval(pollInterval);
                     document.getElementById('btn-trigger').disabled = false;
+                    document.getElementById('btn-trigger-yc').disabled = false;
                     document.getElementById('btn-trigger').innerHTML = '✨ FETCH & AUTO-APPLY';
+                    document.getElementById('btn-trigger-yc').innerHTML = '🚀 DRAFT YC PITCHES';
                     document.getElementById('btn-stop').style.display = 'none';
                     fetchApps();
                     fetchManualJobs();

@@ -328,8 +328,54 @@ app.post('/api/trigger', (req, res) => {
     res.json({ message: 'Process started' });
 });
 
+app.post('/api/trigger-yc', (req, res) => {
+    if (isRunning) return res.status(400).json({ error: 'A process is already running' });
+    if (!req.body.text) return res.status(400).json({ error: 'Text input is required' });
+
+    isRunning = true;
+    currentLogs = [];
+    currentLogs.push('🚀 Starting Premium YC Cold Outreach process...\n');
+
+    const tempFile = path.resolve(process.cwd(), 'temp_startups.txt');
+    fs.writeFileSync(tempFile, req.body.text, 'utf8');
+
+    currentChildProcess = spawn('npx', ['tsx', 'yc_cold_email.ts', tempFile], {
+        env: { ...process.env, SERVER_PORT: String(PORT) },
+        cwd: process.cwd()
+    });
+
+    let stdoutBuffer = '';
+    currentChildProcess.stdout?.on('data', (data: Buffer) => {
+        stdoutBuffer += data.toString();
+        const lines = stdoutBuffer.split('\n');
+        stdoutBuffer = lines.pop() || '';
+        lines.forEach(line => { if (line) currentLogs.push(line + '\n'); });
+    });
+
+    currentChildProcess.stderr?.on('data', (data: Buffer) => {
+        currentLogs.push(data.toString());
+    });
+
+    currentChildProcess.on('close', (code: number | null) => {
+        if (stdoutBuffer) currentLogs.push(stdoutBuffer + '\n');
+        currentLogs.push(`\n✅ YC Process finished with exit code ${code}\n`);
+        try { fs.unlinkSync(tempFile); } catch (e) { } // Clean up
+        isRunning = false;
+        currentChildProcess = null;
+    });
+
+    currentChildProcess.on('error', (err: Error) => {
+        currentLogs.push(`\n❌ Failed to start YC process: ${err.message}\n`);
+        isRunning = false;
+        currentChildProcess = null;
+    });
+
+    res.json({ message: 'YC Process started' });
+});
+
 // ============================================================
 // API: Poll Logs + OTP Status
+
 // ============================================================
 app.get('/api/logs', (req, res) => {
     res.json({
