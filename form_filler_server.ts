@@ -3,6 +3,12 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
+import dns from 'node:dns';
+
+// Force IPv4-first DNS resolution to fix ENOTFOUND issues in Node.js 17+
+if (typeof dns.setDefaultResultOrder === 'function') {
+    dns.setDefaultResultOrder('ipv4first');
+}
 
 dotenv.config();
 
@@ -104,11 +110,13 @@ Rishav's Full Resume Data: ${JSON.stringify(resumeData)}
 Goal: Given a form field, return ONLY the best answer based on the resume. 
 Rules:
 1. Return JUST the value. No explanation. No quotes. No prefix.
-2. If it is a dropdown, you MUST return EXACTLY ONE of the listed options (copy character-for-character).
-3. For date fields, return YYYY-MM-DD format OR the readable date (e.g. March 2026) based on the field type.
-4. For textarea/long form questions, write at least 2 sentences with specific details from Rishav's background. If the question is about why you want to join the company, write about how the company's work aligns with Rishav's background in AI/ML and identity systems. 
-5. If you genuinely cannot answer from the resume (e.g. personal status questions like 'Are you a fellow?', 'How did you hear about us?'), return exactly: UNKNOWN_DATA
-6. NEVER make up facts. For YES/NO questions, only answer if the resume provides context, else return UNKNOWN_DATA.`;
+2. If it is a dropdown or radio list, you MUST return EXACTLY ONE of the listed options (copy character-for-character).
+3. For binary (YES/NO) questions, if the answer is clear from the resume, return "YES" or "NO" or pick the exact corresponding option if provided.
+4. IMPORTANT: Fields asking for 'College Name' or 'University Name' should receive the institution name, NOT the user's name (Rishav Tarway).
+5. For date fields, return YYYY-MM-DD format OR the readable date (e.g. March 2026) based on the field type.
+6. For textarea/long form questions, write at least 2 sentences with specific details from Rishav's background. If the question is about why you want to join the company, write about how the company's work aligns with Rishav's background in AI/ML and identity systems. 
+7. If you genuinely cannot answer from the resume (e.g. personal status questions like 'Are you a fellow?', 'How did you hear about us?'), return exactly: UNKNOWN_DATA
+8. NEVER make up facts. For YES/NO questions, only answer if the resume provides context, else return UNKNOWN_DATA.`;
 
     const userPrompt = `
 Field Label: "${fieldLabel}"

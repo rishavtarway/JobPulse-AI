@@ -1,4 +1,4 @@
-# Telegram MCP Server
+# JobPulse-AI
 
 A Model Context Protocol (MCP) server that provides full access to your personal Telegram account. This allows you to interact with your Telegram messages, chats, and contacts through MCP clients like Claude Desktop.
 
@@ -84,7 +84,7 @@ For Amazon Q CLI, create or edit your MCP configuration file:
   "mcpServers": {
     "telegram": {
       "command": "node",
-      "args": ["/Users/orrb/personal/workspace/telegram-mcp/dist/index.js"],
+      "args": ["/Users/orrb/personal/workspace/JobPulse-AI/dist/index.js"],
       "env": {
         "TELEGRAM_API_ID": "your_api_id",
         "TELEGRAM_API_HASH": "your_api_hash",
@@ -107,7 +107,7 @@ Add this to your Claude Desktop configuration file:
   "mcpServers": {
     "telegram": {
       "command": "node",
-      "args": ["/path/to/telegram-mcp-server/dist/index.js"],
+      "args": ["/path/to/JobPulse-AI/dist/index.js"],
       "env": {
         "TELEGRAM_API_ID": "your_api_id",
         "TELEGRAM_API_HASH": "your_api_hash",
@@ -127,7 +127,7 @@ For Cline, add the MCP server to your VS Code settings or Cline configuration:
   "cline.mcpServers": {
     "telegram": {
       "command": "node",
-      "args": ["/path/to/telegram-mcp-server/dist/index.js"],
+      "args": ["/path/to/JobPulse-AI/dist/index.js"],
       "env": {
         "TELEGRAM_API_ID": "your_api_id",
         "TELEGRAM_API_HASH": "your_api_hash",
@@ -142,7 +142,7 @@ For Cline, add the MCP server to your VS Code settings or Cline configuration:
 
 For other MCP clients, use:
 - **Command**: `node`
-- **Args**: `["/path/to/telegram-mcp-server/dist/index.js"]`
+- **Args**: `["/path/to/JobPulse-AI/dist/index.js"]`
 - **Environment Variables**: Set the Telegram credentials as shown above
 
 ## Available Tools

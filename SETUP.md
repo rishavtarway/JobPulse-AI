@@ -64,7 +64,7 @@ Add this to your Claude Desktop config file:
   "mcpServers": {
     "telegram": {
       "command": "node",
-      "args": ["/full/path/to/telegram-mcp-server/dist/index.js"],
+      "args": ["/full/path/to/JobPulse-AI/dist/index.js"],
       "env": {
         "TELEGRAM_API_ID": "12345678",
         "TELEGRAM_API_HASH": "abcdef1234567890abcdef1234567890",
@@ -75,7 +75,7 @@ Add this to your Claude Desktop config file:
 }
 ```
 
-**Important**: Replace `/full/path/to/telegram-mcp-server/` with the actual absolute path to your project directory.
+**Important**: Replace `/full/path/to/JobPulse-AI/` with the actual absolute path to your project directory.
 
 ## 6. Restart Claude Desktop
 

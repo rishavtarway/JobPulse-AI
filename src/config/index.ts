@@ -25,7 +25,7 @@ const TelegramConfigSchema = z.object({
 });
 
 const ServerConfigSchema = z.object({
-  name: z.string().default('telegram-mcp-server'),
+  name: z.string().default('JobPulse-AI'),
   version: z.string().default('1.0.0'),
   nodeEnv: z.enum(['development', 'production', 'test']).default('production')
 });

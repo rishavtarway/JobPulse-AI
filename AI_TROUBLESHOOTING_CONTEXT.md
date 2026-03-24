@@ -1,6 +1,6 @@
 # AI TROUBLESHOOTING & PROJECT CONTEXT
 
-> **TO ANY FUTURE AI:** If you are reading this file, you have been given the complete context of the `telegram-mcp` Auto-Apply project built by Rishav Tarway. Do NOT ask the user to explain how the system works. Read this document thoroughly to understand the architecture, historical bugs, formatting rules, and API choices before attempting to fix any errors the user provides.
+> **TO ANY FUTURE AI:** If you are reading this file, you have been given the complete context of the `JobPulse-AI` Auto-Apply project built by Rishav Tarway. Do NOT ask the user to explain how the system works. Read this document thoroughly to understand the architecture, historical bugs, formatting rules, and API choices before attempting to fix any errors the user provides.
 
 ---
 

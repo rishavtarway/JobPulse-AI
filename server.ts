@@ -4,6 +4,24 @@ import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
 import os from 'os';
+import dns from 'node:dns';
+
+// Force IPv4-first DNS resolution to fix ENOTFOUND issues in Node.js 17+
+if (typeof dns.setDefaultResultOrder === 'function') {
+    dns.setDefaultResultOrder('ipv4first');
+}
+
+// Global error handlers to catch and log hidden crashes
+process.on('uncaughtException', (err) => {
+    console.error('\n🔥 CRITICAL UNCAUGHT EXCEPTION:');
+    console.error(err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('\n⚠️ UNHANDLED PROMISE REJECTION:');
+    console.error('Promise:', promise);
+    console.error('Reason:', reason);
+});
 
 // Helper to get local IP address
 function getLocalIpAddress() {
@@ -39,6 +57,32 @@ function safeReadFile(filename: string) {
         return fs.readFileSync(filePath, 'utf8');
     }
     return '';
+}
+
+function flexibleParseDate(dateStr: string): number {
+    if (!dateStr) return 0;
+    let d = new Date(dateStr);
+    if (!isNaN(d.getTime())) return d.getTime();
+
+    // Try parsing "13/3/2026, 11:51:14 pm" (D/M/YYYY)
+    const match = dateStr.match(/(\d+)\/(\d+)\/(\d+)(?:,?\s+(.*))?/);
+    if (match) {
+        const day = parseInt(match[1]);
+        const month = parseInt(match[2]) - 1;
+        const year = parseInt(match[3]);
+        const timePart = match[4];
+        
+        if (timePart) {
+            // Very simple AM/PM check
+            let [hms, ampm] = timePart.split(/\s+/);
+            let [h, m, s] = (hms || '0:0:0').split(':').map(x => parseInt(x) || 0);
+            if (ampm && ampm.toLowerCase() === 'pm' && h < 12) h += 12;
+            if (ampm && ampm.toLowerCase() === 'am' && h === 12) h = 0;
+            return new Date(year, month, day, h, m, s).getTime();
+        }
+        return new Date(year, month, day).getTime();
+    }
+    return 0;
 }
 
 // ============================================================
@@ -142,61 +186,119 @@ app.get('/api/manual-jobs', (req, res) => {
     // 2. Also parse from MANUAL_APPLY_TASKS.md (Legacy + Backups)
     const content = safeReadFile('MANUAL_APPLY_TASKS.md');
     const legacyTasks: any[] = [];
-    const blocks = content.split('###');
+    
+    // Split by sections first to find the date/batch info
+    // Using lookahead so we keep the header in the resulting chunk for date extraction
+    const sections = content.split(/(?=##.*Manual\s+Applications)/i);
+    
+    sections.forEach(section => {
+        if (!section.trim()) return;
+        
+        const firstLine = section.split('\n')[0];
+        const dateMatchHeader = firstLine.match(/\((.*?)\)/);
+        const batchDate = dateMatchHeader ? dateMatchHeader[1] : null;
+        
+        const blocks = section.split('###');
+        blocks.forEach((block, index) => {
+            if (!block.trim() || block.startsWith(' Manual')) return;
+            const lines = block.trim().split('\n');
 
-    blocks.forEach(block => {
-        if (!block.trim()) return;
-        const lines = block.trim().split('\n');
+            const headerMatch = lines[0].match(/(?:\[(.*?)\]\s*)?Job\s*ID:\s*(\d+)/i) || lines[0].match(/Job\s*ID:\s*(\d+)/i);
+            if (!headerMatch) return;
 
-        // Match: [Channel] Job ID: 123... or just Job ID: 123
-        const headerMatch = lines[0].match(/(?:\[(.*?)\]\s*)?Job\s*ID:\s*(\d+)/i);
-        if (!headerMatch) return;
+            let channel = 'Telegram Group';
+            let telegramId = '';
 
-        const channel = headerMatch[1] || 'Telegram Group';
-        const telegramId = headerMatch[2];
-        const dateMatch = block.match(/Posted:\s*(.*?)\)/) || block.match(/Need\s*\((.*?)\)/);
-        const date = dateMatch ? dateMatch[1] : '';
+            if (headerMatch.length === 3 && headerMatch[1]) {
+                channel = headerMatch[1];
+                telegramId = headerMatch[2];
+            } else {
+                telegramId = headerMatch[1] || headerMatch[2];
+            }
 
-        // Extract Link
-        let link = "";
-        const linkMatch = block.match(/\*\*Apply Here:\*\*[^\n]*\(([^)]+)\)/i) || block.match(/(https?:\/\/\S+)/i);
-        if (linkMatch) link = linkMatch[1].replace(/[)\].,]+$/, '');
+            // Fallback to batch date if channel is generic
+            if (channel === 'Telegram Group' && batchDate) {
+                channel = `Discovery: ${new Date(batchDate).toLocaleDateString()}`;
+            }
 
-        // Extract Description
-        const descMatch = block.match(/\*\*Description:\*\*([\s\S]*)/i);
-        let description = descMatch ? descMatch[1].replace(/^>\s*/gm, '').trim() : '';
-        if (description.includes('---')) description = description.split('---')[0].trim();
+            const dateMatch = block.match(/Posted:\s*(.*?)\)/) || block.match(/Need\s*\((.*?)\)/);
 
-        legacyTasks.push({
-            id: 'legacy-' + telegramId,
-            telegramId,
-            channel,
-            company: 'Legacy Posting',
-            role: 'Manual Application',
-            link,
-            description,
-            appliedDate: date,
-            status: 'to_apply'
+            let actualPostingVal = 0;
+            if (dateMatch) {
+                actualPostingVal = flexibleParseDate(dateMatch[1]);
+            }
+
+            let appliedDateVal = actualPostingVal > 0 ? actualPostingVal : 0;
+            if (appliedDateVal <= 0 && batchDate) {
+                const parsedBatch = flexibleParseDate(batchDate);
+                if (parsedBatch > 0) appliedDateVal = parsedBatch;
+            }
+            
+            if (appliedDateVal <= 0) appliedDateVal = Date.now();
+
+            let postedDateStr = dateMatch ? dateMatch[1] : "";
+            const dateStr = new Date(appliedDateVal).toISOString();
+            const dateVal = appliedDateVal; // Ensure _timestamp matches
+
+            // Extract Link
+            let link = "";
+            const linkMatch = block.match(/\*\*Apply Here:\*\*[^\n]*\(([^)]+)\)/i) || 
+                            block.match(/\*\*Apply Here:\*\*\s*(https?:\/\/\S+)/i) ||
+                            block.match(/(https?:\/\/\S+)/i);
+            if (linkMatch) link = linkMatch[1].replace(/[)\].,]+$/, '');
+
+            if (!link) return;
+
+            // Extract Description
+            const descMatch = block.match(/\*\*Description:\*\*([\s\S]*)/i);
+            let description = descMatch ? descMatch[1].replace(/^>\s*/gm, '').trim() : '';
+            if (description.includes('---')) description = description.split('---')[0].trim();
+
+            legacyTasks.push({
+                id: 'legacy-' + telegramId + '-' + Math.random().toString(36).substr(2, 9),
+                telegramId,
+                channel,
+                company: 'Direct Portal',
+                role: 'Manual Application',
+                link,
+                description,
+                appliedDate: dateStr,
+                _timestamp: dateVal, 
+                status: 'to_apply',
+                type: 'manual',
+                notes: postedDateStr ? `Posted: ${postedDateStr}` : ""
+            });
         });
     });
 
-    // Merge and Deduplicate by Link (roughly)
+    // Merge and Deduplicate by Link (Check against ALL apps to avoid reapplying)
     const combined = [...jsonManual];
-    const seenLinks = new Set(combined.map(a => a.link));
+    const allSeenLinks = new Set(apps.map((a: any) => a.link).filter(Boolean));
 
-    legacyTasks.forEach(task => {
-        if (!seenLinks.has(task.link)) {
+    legacyTasks.reverse().forEach(task => {
+        if (!allSeenLinks.has(task.link)) {
+            // Stronger internship detection
+            const isIntern = task.description.toLowerCase().includes('intern') || 
+                            task.channel.toLowerCase().includes('intern');
+            
+            if (isIntern) {
+                task.role = 'Internship Opportunity';
+                task.company = task.company !== 'Direct Portal' ? task.company : 'Direct Internship';
+            } else {
+                task.role = 'Manual Application';
+            }
             combined.push(task);
-            seenLinks.add(task.link);
+            allSeenLinks.add(task.link);
         }
     });
 
     combined.sort((a: any, b: any) => {
-        const dateA = new Date(a.appliedDate).getTime() || 0;
-        const dateB = new Date(b.appliedDate).getTime() || 0;
-        return dateB - dateA;
+        const timeA = a._timestamp || new Date(a.appliedDate).getTime() || 0;
+        const timeB = b._timestamp || new Date(b.appliedDate).getTime() || 0;
+        return timeB - timeA;
     });
 
+    console.log(`[ManualJobs] Final combined: ${combined.length}`);
     res.json(combined);
 });
 
@@ -205,7 +307,7 @@ app.get('/api/applications', (req, res) => {
 });
 
 app.post('/api/applications', (req, res) => {
-    const { company, role, email, link, description, status = 'applied', telegramId, channel } = req.body;
+    const { company, role, email, link, description, status = 'applied', telegramId, channel, type = 'telegram' } = req.body;
     if (!company) return res.status(400).json({ error: 'Company is required' });
 
     const apps = readApps();
@@ -220,6 +322,7 @@ app.post('/api/applications', (req, res) => {
         description: description || '',
         appliedDate: new Date().toISOString(),
         status, // applied, intro_call, technical_round, hr_round, offered, rejected, no_response, to_apply
+        type, // telegram, yc
         notes: ''
     };
 

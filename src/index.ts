@@ -1,5 +1,12 @@
 #!/usr/bin/env node
 
+import dns from 'node:dns';
+
+// Force IPv4-first DNS resolution to fix ENOTFOUND issues in Node.js 17+
+if (typeof dns.setDefaultResultOrder === 'function') {
+  dns.setDefaultResultOrder('ipv4first');
+}
+
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {

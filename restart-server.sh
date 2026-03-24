@@ -1,5 +1,9 @@
 #!/bin/bash
+# Kill any existing server processes
+pkill -f "tsx server.ts" || true
+pkill -f "tsx combined_server.ts" || true
 pkill -f "tsx form_filler_server.ts" || true
 sleep 1
-npm run form-filler > /dev/null 2>&1 &
+# Start the combined server which manages both
+npm start > server.log 2>&1 &
 echo "Server Restarted"

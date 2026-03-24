@@ -142,25 +142,51 @@ async function performDeterministicFill(inputs) {
         const bestOption = (...keys) => options.find(o => keys.some(k => o.toLowerCase().includes(k.toLowerCase())));
         const exactOption = (val) => options.find(o => o.toLowerCase().trim() === val.toLowerCase().trim());
 
-        // Fill logic based on mappings
+        // Helper to check if any parent/ancestor has educational context
+        let isEduContext = false;
+        let p = el.parentElement;
+        for(let i=0; i<5 && p; i++) {
+            const pCtx = `${p.id} ${p.className} ${p.getAttribute('aria-label') || ''}`.toLowerCase();
+            if (pCtx.includes('edu') || pCtx.includes('school') || pCtx.includes('college') || pCtx.includes('university') || pCtx.includes('academic')) {
+                isEduContext = true; break;
+            }
+            p = p.parentElement;
+        }
+
+        // Deterministic logic for critical fields
         let value = null;
 
-        if (has('first name', 'given name')) value = R.first_name;
-        else if (has('last name', 'family name')) value = R.last_name;
-        else if (has('full name', 'your name') || (has('name') && !has('company', 'employer'))) value = R.name;
+        // 1. Check for College/University FIRST to avoid 'name' collision
+        // Expanded keywords and context checking
+        if (has('college', 'university', 'school', 'educational institution', 'institute', 'academic institution') || (isEduContext && has('name'))) {
+             value = edu.institution_short || edu.institution;
+        } 
+        // 2. Personal Identity
+        else if (has('first name', 'given name') && !isEduContext) value = R.first_name;
+        else if (has('last name', 'family name', 'surname') && !isEduContext) value = R.last_name;
+        else if ((has('full name', 'your name') || (has('name') && !has('company', 'employer', 'org', 'current', 'previous'))) && !isEduContext) value = R.name;
+        
+        // 3. Contact Info
         else if (has('email', 'e-mail')) value = R.email;
-        else if (has('phone', 'mobile', 'contact', 'whatsapp')) value = R.phone_formatted || R.phone;
-        else if (has('notice', 'available', 'earliest join')) value = exactOption('immediately') || bestOption('immediately', '1 month', '30 days') || 'Immediately';
+        else if (has('phone', 'mobile', 'contact', 'whatsapp', 'tel')) value = R.phone_formatted || R.phone;
+        
+        // 4. Professional Links
         else if (has('linkedin')) value = R.linkedin;
         else if (has('github')) value = R.github;
-        else if (has('portfolio', 'website')) value = R.portfolio;
-        else if (has('city', 'location')) value = R.current_city;
-        else if (has('college', 'university', 'school')) value = edu.institution_short || edu.institution;
-        else if (has('degree')) value = edu.degree;
-        else if (has('cgpa', 'gpa', 'grade')) value = edu.cgpa;
+        else if (has('portfolio', 'website', 'personal site', 'url')) value = R.portfolio;
+        
+        // 5. Work preferences / Status
+        else if (has('notice', 'available', 'earliest join', 'availability')) value = exactOption('immediately') || bestOption('immediately', '1 month', '30 days') || 'Immediately';
+        else if (has('city', 'location', 'address')) value = R.current_city;
+        else if (has('degree', 'major', 'graduation')) value = edu.degree;
+        else if (has('cgpa', 'gpa', 'grade', 'marks')) value = edu.cgpa;
         else if (has('percentage')) value = R.cgpa_as_percentage || '84.9';
+        
+        // 6. Demographics
         else if (has('gender')) value = exactOption('male') || bestOption('male') || 'Male';
-        else if (has('currently pursuing', 'studying') && inputType === 'checkbox') value = 'true';
+        else if (has('currently pursuing', 'studying', 'enrolled') && (inputType === 'checkbox' || inputType === 'radio')) value = 'Yes';
+        
+        // 7. Security / Account
         else if (has('pass', 'retype') && inputType === 'password') value = R.default_app_password;
 
         if (value) {
@@ -210,7 +236,7 @@ async function fillElement(el, value) {
     // 1. ARIA Radio/Checkbox (Common in Google Forms)
     if (role === 'radio' || role === 'checkbox') {
         const lbl = getLabel(el).toLowerCase();
-        if (lbl === value.toLowerCase() || value.toLowerCase().includes(lbl) || lbl.includes(value.toLowerCase())) {
+        if (isOptionMatch(lbl, value)) {
             el.click();
             return true;
         }
@@ -220,7 +246,7 @@ async function fillElement(el, value) {
             const others = container.querySelectorAll(`[role="${role}"]`);
             for (const o of others) {
                 const oLbl = getLabel(o).toLowerCase();
-                if (oLbl === value.toLowerCase() || value.toLowerCase().includes(oLbl) || oLbl.includes(value.toLowerCase())) {
+                if (isOptionMatch(oLbl, value)) {
                     o.click();
                     return true;
                 }
@@ -230,15 +256,14 @@ async function fillElement(el, value) {
 
     if (tag === 'SELECT') {
         const opts = Array.from(el.options);
-        const match = opts.find(o => o.text.trim().toLowerCase() === value.toLowerCase().trim()) ||
-            opts.find(o => o.text.toLowerCase().includes(value.toLowerCase()));
+        const match = opts.find(o => isOptionMatch(o.text, value));
         if (match) { el.value = match.value; el.dispatchEvent(new Event('change', { bubbles: true })); return true; }
         return false;
     }
 
     if (type === 'checkbox' || type === 'radio') {
         const lbl = getLabel(el).toLowerCase();
-        if (lbl === value.toLowerCase() || value.toLowerCase().includes(lbl)) {
+        if (isOptionMatch(lbl, value)) {
             if (!el.checked) el.click();
             return true;
         }
@@ -248,13 +273,12 @@ async function fillElement(el, value) {
             const others = document.querySelectorAll(`input[name="${name}"]`);
             for (const o of others) {
                 const oLbl = getLabel(o).toLowerCase();
-                if (oLbl === value.toLowerCase() || value.toLowerCase().includes(oLbl)) {
+                if (isOptionMatch(oLbl, value)) {
                     if (!o.checked) o.click();
                     return true;
                 }
             }
         }
-        return true;
     }
 
     // Default input filling
@@ -424,6 +448,23 @@ function isVisible(el) {
     const s = window.getComputedStyle(el);
     // Relaxed for form inputs: permit opacity: 0 since many libraries mask them
     return s.display !== 'none' && s.visibility !== 'hidden';
+}
+
+function isOptionMatch(label, value) {
+    const l = label.toLowerCase().trim();
+    const v = value.toLowerCase().trim();
+    if (l === v || l.includes(v) || v.includes(l)) return true;
+
+    // Fuzzy boolean matches
+    if (v === 'yes' || v === 'true') {
+        const positives = ['yes', 'yep', 'true', 'agree', 'i ', 'correct'];
+        return positives.some(p => l === p || l.startsWith(p));
+    }
+    if (v === 'no' || v === 'false') {
+        const negatives = ['no', 'nope', 'false', 'disagree', 'incorrect'];
+        return negatives.some(n => l === n || l.startsWith(n));
+    }
+    return false;
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }

@@ -2,7 +2,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { google } from 'googleapis';
 import nodemailer from 'nodemailer';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import dns from 'node:dns';
+
+// Force IPv4-first DNS resolution to fix ENOTFOUND issues in Node.js 17+
+if (typeof dns.setDefaultResultOrder === 'function') {
+  dns.setDefaultResultOrder('ipv4first');
+}
+import { callAI } from './src/utils/ai_service.js';
 
 // Detect if we are running inside the web server (BROWSER_MODE)
 const BROWSER_MODE = process.env.BROWSER_MODE === '1';
@@ -70,8 +76,9 @@ const loadEnv = () => {
 loadEnv();
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-if (!OPENROUTER_API_KEY) {
-  console.error("❌ Missing OPENROUTER_API_KEY in .env. Cannot generate emails.");
+const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY;
+if (!OPENROUTER_API_KEY && !NVIDIA_API_KEY) {
+  console.error("❌ Missing AI API keys in .env. Cannot generate emails.");
   process.exit(1);
 }
 
@@ -97,22 +104,18 @@ const TARGET_CHANNELS = [
 
 // Attachments required for every email
 const ATTACHMENTS = [
+  { filename: 'RishavTarway-Resume.pdf', path: path.join(process.cwd(), 'RishavTarway-Resume.pdf') },
   { filename: 'OpenSourceContributions.pdf', path: path.join(process.cwd(), 'OpenSourceContributions.pdf') },
   { filename: 'RishavTarway_IIITB_InternshipCertificate.pdf', path: path.join(process.cwd(), 'RishavTarway_IIITB_InternshipCertificate.pdf') },
-  { filename: 'RishavTarway-Resume.pdf', path: path.join(process.cwd(), 'RishavTarway-Resume.pdf') },
   { filename: 'SRIP_CompletionLetter Certificate2025_IIITB.pdf', path: path.join(process.cwd(), 'SRIP_CompletionLetter Certificate2025_IIITB.pdf') }
 ].filter(att => fs.existsSync(att.path));
 
 const SIGNATURE_HTML = `
 <br><br>
-Yours sincerely<br><br>
-Rishav Tarway<br>
-<a href="https://drive.google.com/file/d/18y1yNOP-C7Mw8_Japfeb9ihsfNk6YiwH/view?usp=sharing">Resume</a> |
-<a href="https://www.linkedin.com/in/rishav-tarway-fst/">LinkedIn</a> |
-<a href="https://github.com/rishavtarway">GitHub</a> |
-<a href="https://my-portfolio-five-roan-36.vercel.app/">Portfolio</a> |
-<a href="https://wiggly-cyclone-4b3.notion.site/Open-Source-Contributions-196c5ae56b3480ffa68cce470f9fd6cc">Open Source</a> |
-<a href="https://codeforces.com/profile/NeonMagic">Codeforces</a>
+Regards,<br>
+<strong>Rishav Tarway</strong><br>
+<a href="https://drive.google.com/file/d/18y1yNOP-C7Mw8_Japfeb9ihsfNk6YiwH/view?usp=sharing">Resume (Drive)</a> | <a href="https://wiggly-cyclone-4b3.notion.site/Open-Source-Contributions-196c5ae56b3480ffa68cce470f9fd6cc">Open Source Contributions</a><br>
+<a href="https://www.linkedin.com/in/rishav-tarway-fst/">LinkedIn</a> | <a href="https://my-portfolio-five-roan-36.vercel.app/">Portfolio</a> | <a href="https://github.com/rishavtarway">GitHub</a>
 `;
 
 // ============================================================================
@@ -122,9 +125,11 @@ async function authorizeGmail() {
   const CREDENTIALS_PATH = path.join(process.cwd(), 'credential.json');
   const TOKEN_PATH = path.join(process.cwd(), 'token.json');
 
-  if (!fs.existsSync(CREDENTIALS_PATH) || !fs.existsSync(TOKEN_PATH)) {
-    throw new Error("Missing credential.json or token.json. Please run Gmail auth script first.");
-  }
+  console.log(`   📂 Loading credentials from: ${CREDENTIALS_PATH}`);
+  if (!fs.existsSync(CREDENTIALS_PATH)) throw new Error("Missing credential.json");
+  
+  console.log(`   📂 Loading token from: ${TOKEN_PATH}`);
+  if (!fs.existsSync(TOKEN_PATH)) throw new Error("Missing token.json");
 
   const content = fs.readFileSync(CREDENTIALS_PATH, 'utf8');
   const credentials = JSON.parse(content);
@@ -133,8 +138,33 @@ async function authorizeGmail() {
   const redirectUris = credentials.installed?.redirect_uris || credentials.web?.redirect_uris || ['http://localhost'];
 
   const oAuth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUris[0]);
-  const token = fs.readFileSync(TOKEN_PATH, 'utf8');
-  oAuth2Client.setCredentials(JSON.parse(token));
+  const token = JSON.parse(fs.readFileSync(TOKEN_PATH, 'utf8'));
+  
+  console.log(`   🔑 Token scope: ${token.scope}`);
+  console.log(`   📅 Token expiry: ${new Date(token.expiry_date).toLocaleString()}`);
+  
+  oAuth2Client.setCredentials(token);
+
+  // Pre-flight check: Use a more robust check that works with compose scope
+  try {
+    console.log("   🧪 Running Gmail pre-flight check...");
+    const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
+    // getProfile might fail if scope is ONLY compose, but let's try it and catch
+    await gmail.users.getProfile({ userId: 'me' });
+    console.log("   ✅ Gmail pre-flight check passed.");
+  } catch (err: any) {
+    console.warn(`   ⚠️ Pre-flight warning: ${err.message}`);
+    if (err.message?.includes('invalid_grant')) {
+      throw new Error("Gmail token expired/revoked. Please run 'npx tsx auth_gmail.ts' to re-authorize.");
+    }
+    // If it's a 403 Insufficient Permission, we might still be able to create drafts
+    if (err.code === 403) {
+      console.log("   ℹ️ Insufficient permission for getProfile, but proceeding with compose scope...");
+    } else {
+       throw err;
+    }
+  }
+
   return oAuth2Client;
 }
 
@@ -149,40 +179,13 @@ async function isRealJobPosting(text: string): Promise<boolean> {
   if (text.includes('@') && (text.toLowerCase().includes('hiring') || text.toLowerCase().includes('job') || text.toLowerCase().includes('internship'))) return true;
 
   // Otherwise, ask AI to filter out clutter
-  const prompt = `Task: Is this a job posting or application link?
-Message: "${text.substring(0, 1000)}"
+  const prompt = `Critically evaluate if this text is a real engineering job / internship posting or a link to a job application form.
+    Message: "${text.substring(0, 1000)}"
 Reply ONLY with "YES" if it's a job/internship posting or application form link. 
 Reply ONLY with "NO" if it's general chat, career guidance, spam, or a generic question.`;
 
-  const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-  const fallbackModels = ["google/gemini-2.0-flash:free", "mistralai/mistral-7b-instruct:free"];
-
-  for (const model of fallbackModels) {
-    try {
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": "http://localhost:3000",
-          "X-OpenRouter-Title": "Auto Apply Filter"
-        },
-        body: JSON.stringify({
-          model: model,
-          messages: [{ role: "user", content: prompt }]
-        })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        const reply = data.choices[0].message.content.trim().toUpperCase();
-        return reply.includes("YES");
-      }
-    } catch (e) {
-      continue;
-    }
-  }
-  return false; // Default to false if AI fails
+  const reply = await callAI(prompt);
+  return reply?.toUpperCase().includes("YES") || false;
 }
 
 async function extractCompanyName(text: string, email?: string): Promise<string> {
@@ -196,35 +199,12 @@ async function extractCompanyName(text: string, email?: string): Promise<string>
     }
   }
 
-  // Ask AI to find company name in text
   const prompt = `Extract the official company name from this job posting.
 Message: "${text.substring(0, 1000)}"
 Reply ONLY with the company name. If no specific company name is found, reply ONLY with "Hiring Team".`;
 
-  const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-  const models = ["google/gemini-2.0-flash:free", "mistralai/mistral-7b-instruct:free"];
-
-  for (const model of models) {
-    try {
-      const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          model: model,
-          messages: [{ role: "user", content: prompt }]
-        })
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        const name = data.choices[0].message.content.trim();
-        if (name && name.length < 50) return name;
-      }
-    } catch (e) { }
-  }
-  return "Hiring Team";
+  const name = await callAI(prompt);
+  return name?.trim().substring(0, 50) || "Hiring Team";
 }
 
 const APPS_FILE = 'applications.json';
@@ -285,34 +265,33 @@ async function extractNewJobs() {
     let batchCounter = 0;
     const seenIds = new Set<number>();
 
-    while (keepFetching && batchCounter < 10) {
+    while (keepFetching && batchCounter < 20) { // Increased batch counter for deeper search
       const batch = await client.getMessages(targetChannel.id, 50, lastFetchedId);
       if (!batch || batch.length === 0) break;
 
       for (const m of batch) {
-        if (m.id > lastProcessedId && !seenIds.has(m.id)) {
-          // CHECK IF ALREADY IN TRACKER
-          if (isAlreadyApplied(m.id.toString(), targetChannel.name)) {
-            // If already applied, we still update the seen IDs but skip adding to work list
-            seenIds.add(m.id);
-            continue;
-          }
+        const isNew = m.id > lastProcessedId;
+        const alreadyApplied = isAlreadyApplied(m.id.toString(), targetChannel.name);
+
+        if (!seenIds.has(m.id) && !alreadyApplied) {
+          // We take it if it's strictly newer OR if we missed it somehow but it's not in DB
           newMessages.push(m);
           seenIds.add(m.id);
         }
       }
 
       const oldestInBatch = batch[batch.length - 1];
-      if (lastFetchedId === oldestInBatch.id || oldestInBatch.id <= lastProcessedId) {
+      // Logic: keep fetching until we hit 1000 messages or we are deep past the lastProcessedId
+      if (lastFetchedId === oldestInBatch.id || (oldestInBatch.id < (lastProcessedId - 1000))) {
         keepFetching = false;
       }
       lastFetchedId = oldestInBatch.id;
       batchCounter++;
-      process.stdout.write(`   Scanning batch... (Oldest: ${oldestInBatch.id})\r`);
+      process.stdout.write(`   Scanning batch... (Oldest: ${oldestInBatch.id}, Found: ${newMessages.length})\r`);
     }
 
     if (newMessages.length === 0) {
-      console.log(`   ✅ No new messages in ${targetChannel.name}.`);
+      console.log(`\n   ✅ Checked status of ${targetChannel.name}. No new actionable messages.`);
       continue;
     }
 
@@ -374,7 +353,7 @@ async function extractNewJobs() {
   if (allManualJobs.length > 0) {
     let mdContent = `\n\n## Multi-Channel Manual Applications (${new Date().toISOString()})\n\n`;
     allManualJobs.forEach(job => {
-      mdContent += `### [${job.channel}] Job ID: ${job.id}\n`;
+      mdContent += `### [${job.channel}] Job ID: ${job.id} (Posted: ${new Date(job.date).toLocaleString()})\n`;
       mdContent += `**Apply Here:** [${job.link}](${job.link})\n\n`;
       mdContent += `**Description:**\n> ${job.text.replace(/\n/g, '\n> ')}\n\n`;
       mdContent += `---\n`;
@@ -397,7 +376,8 @@ async function extractNewJobs() {
             telegramId: job.id,
             link: job.link,
             description: job.text,
-            status: 'to_apply'
+            status: 'to_apply',
+            type: 'telegram'
           })
         });
       } catch (e) { }
@@ -428,194 +408,82 @@ function extractName(email: string, text: string): string {
 }
 
 async function generateEmailContent(jobText: string, company: string, contactName: string): Promise<{ subject: string, body: string }> {
-  const isGenericCompany = company === "Hiring Team" || company === "your company";
-  const greeting = contactName === "Team" ? `Hi ${company}` : `Hi ${contactName}`;
+  const greeting = contactName === "Team" ? `Hello ${company} Team,` : `Hello ${contactName},`;
 
   const prompt = `
-Generate a professional cold email application as valid JSON.
+Generate a minimalist, human-like cold email for a job application.
+YOU ARE RISHAV TARWAY. Write strictly in the FIRST PERSON ("I").
+NEVER refer to yourself as "Rishav" or "Tarway" in the body.
+
+Applicant Details (USE THESE IN FIRST PERSON):
+- IIIT Bangalore: I worked with the MOSIP team (government identity systems) building high-scale BDD test suites and fixing critical sync bugs.
+- Classplus: I worked with the Classplus team to optimize backend architecture for 10k+ concurrent users.
+- Open Source: I merged PR #48 for OpenPrinting's fuzzing layer.
+- Top Skills: Java, Python, TypeScript, Node.js, Selenium, AWS, Redis.
+
 Job Description: "${jobText}"
 Target Company: ${company}
+Contact Name: ${contactName}
 
 STRICT RULES:
 1. Return JSON: {"subject": "...", "body": "..."}
-2. Paragraph 1: Mention passion for the role/tech instead of focusing purely on "following the company" if company name is unknown. 
-3. Mention rishav tarway, IIIT Bangalore internship, Classplus internship.
-4. Mention fuzzing PR at OpenPrinting.
-5. NO placeholders like [Company Name]. Use "${company}" exactly or generic professional terms.
-6. Body must be exactly 3 paragraphs in HTML <p> tags.
-7. Focus on skills matching the job description.`;
+2. SUBJECT LINE: Catchy brackets [] or semicolons ; as per user style. 
+   Example: "[Inquiry] Engineering at ${company}".
+3. GREETING: Start with exactly one greeting: "Hi ${contactName}," or "Hello ${contactName},".
+4. BODY: NO BOLDING. NEVER use your own name in the sentences. 
+5. TONE: Human, conversational. No "I am writing...". Just start with the connection to ${company}.
+6. Content must be 3 short paragraphs in HTML <p> tags. Total under 130 words.
+7. THE ASK: End with: "Would you be open to a quick 14-minute coffee chat this week or next?"`;
 
-  const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-  if (!OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY is not defined in .env");
+  console.log(`   🤖 Generating humanized pitch for ${company}...`);
+  const result = await callAI(prompt, true);
 
-  const fallbackModels = ["openrouter/free", "google/gemma-3-27b-it:free", "mistralai/mistral-7b-instruct:free", "meta-llama/llama-3.2-1b-instruct:free"];
-  let currentModelIdx = 0;
-  let retries = 3;
-
-  while (retries > 0 && currentModelIdx < fallbackModels.length) {
-    try {
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": "http://localhost:3000",
-          "X-OpenRouter-Title": "Auto Apply Bot"
-        },
-        body: JSON.stringify({
-          model: fallbackModels[currentModelIdx],
-          messages: [
-            { role: "user", content: prompt }
-          ]
-        })
-      });
-
-      if (response.status === 429 || response.status === 402) {
-        console.log(`   ⏳ Model ${fallbackModels[currentModelIdx]} rate-limited/failed (${response.status}). Switching model...`);
-        currentModelIdx++;
-        if (currentModelIdx >= fallbackModels.length) {
-          console.log(`   ⏳ All free models exhausted! Sleeping 15s...`);
-          await new Promise(r => setTimeout(r, 15000));
-          currentModelIdx = 0;
-          retries--;
-        }
-        continue;
-      }
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`OpenRouter API error: ${response.status} ${errorText}`);
-      }
-
-      const result = await response.json();
-      const responseText = result.choices[0].message.content;
-
-      let parsed = { subject: "Application | Software Engineer | Rishav Tarway", body: responseText };
-      try {
-        let content = responseText.replace(/^```[a-z]*\n/, '').replace(/\n```$/, '').trim();
-        if (content.startsWith('```')) content = content.substring(3).trim();
-        if (content.startsWith('json\n')) content = content.substring(5).trim();
-        if (content.endsWith('```')) content = content.substring(0, content.length - 3).trim();
-
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          parsed = JSON.parse(jsonMatch[0]);
-        } else if (content.startsWith("{")) {
-          parsed = JSON.parse(content);
-        }
-      } catch (jsonErr) {
-        let safeBody = responseText.replace(/\n\n/g, '</p><p>').replace(/\n/g, ' ');
-        if (!safeBody.startsWith('<p>')) safeBody = '<p>' + safeBody + '</p>';
-        parsed = { subject: `Software Engineering Application | ${company} | Rishav Tarway`, body: safeBody };
-      }
-
-      parsed.subject = (parsed.subject || `Application | ${company} | Rishav Tarway`).replace(/[,\[\]\(\)]/g, '');
-      parsed.body = (parsed.body || parsed.subject).replace(/[,\[\]\(\)]/g, '');
-
-      return { subject: parsed.subject, body: `<p>${greeting}</p>${parsed.body}${SIGNATURE_HTML}` };
-    } catch (error: any) {
-      console.error(`   ⚠️ Attempt failed generating AI content for ${company}: ${error.message}`);
-      currentModelIdx++;
-    }
+  if (!result) {
+    return {
+      subject: `[Inquiry] Software Engineer role at ${company}`,
+      body: `<p>I came across the job opportunity for Software Engineer from your department and it immediately caught my eye as it matches my background in high-scale systems.</p><p>My background is in Node.js, TypeScript, and Java, which directly aligns with what you need. I've completed a research internship at IIIT Bangalore on government identity systems and optimized backend infrastructure at Classplus for 10k+ concurrent users. I'm also deeply involved in Open Source, recently merging PR #48 for OpenPrinting.</p><p>I would genuinely love to hear your perspective on what makes someone successful in this role. Would you be open to a quick 14-minute coffee chat this week or next?</p>${SIGNATURE_HTML}`
+    };
   }
 
-  // Fallback if APIs fail
-  return {
-    subject: `Software Engineer Application | High Scale Product Architecture | Rishav Tarway`,
-    body: `<p>${greeting}</p><p>I hope you are doing well. My name is Rishav Tarway and I am reaching out because I have been following ${company} and appreciate the company's commitment to building highly scalable software architecture.</p><p>With my experience in backend optimization at Classplus and extensive quality automation during my IIIT Bangalore internship I am excited about the possibility of contributing to the ${company} engineering team.</p><p>I recently had success contributing to OpenPrinting where I was selected for Winter of Code 5.0 and successfully merged my <a href="https://github.com/OpenPrinting/fuzzing/pull/48">recent PR #48 at OpenPrinting</a>. Writing extensive fuzzing functions to find edge cases is really driving my passion to learn the in depth architecture of software and find their vulnerabilities.</p><p>I would be more than happy to contribute and connect with the amazing team at ${company}. I have attached my resume along with this.</p><p>Thank you and I hope to hear from you soon!</p>${SIGNATURE_HTML}`
-  };
+  return { subject: result.subject, body: `${result.body}${SIGNATURE_HTML}` };
 }
 
 export async function generateYCPolishedEmail(company: string, mission: string, contactName: string): Promise<{ subject: string, body: string }> {
-  const greeting = contactName === "Team" ? `Hi ${company} Team` : `Hi ${contactName}`;
+  const greeting = contactName === "Team" ? `Hi ${company} Team,` : `Hi ${contactName},`;
 
   const prompt = `
-Generate a highly polished, eye-catching cold email application to a startup founder/HR as valid JSON.
+Generate an eye-catching, high-impact cold email for a startup founder as valid JSON. 
+YOU ARE RISHAV TARWAY. Write strictly in the FIRST PERSON ("I").
+NEVER mention your own name ("Rishav" or "Tarway") in the body.
+
+Applicant Facts (USE FIRST PERSON):
+- IIIT Bangalore: I built high-scale BDD test suites with the MOSIP team.
+- Classplus: I worked with the Classplus team to scale backend for 10k+ users.
+- OpenPrinting: I merged critical fuzzing layer PR #48.
+- Skills: TypeScript, Node.js, Java, Python, Selenium, AWS.
+
 Startup Name: "${company}"
-Mission/Context: "${mission}"
+Mission: "${mission}"
+Founder Name: "${contactName}"
 
 STRICT RULES:
 1. Return JSON: {"subject": "...", "body": "..."}
-2. The email must be extremely punchy, designed for a 5-10 second skim by a busy Founder or HR (targeting high-growth startups like YC). It must grab attention immediately and never fail to get a reply.
-3. Tone: Confident, crisp, highly professional but modern (not generic or boring).
-4. Include these exact bragging points naturally, without sounding boastful:
-   - 2 years of Open Source contributions (including merged PRs in OpenPrinting).
-   - 6 paid internships (3 onsite, 3 remote).
-   - Backend optimization & architecture experience at Classplus scaling systems.
-5. Offer proof of work casually but confidently: "I have 5 links already shared on my profile, but let me know what specific tech stack PRs/links you want to see, and I will share them."
-6. Focus heavily on how you can impact their specific mission/company: "${mission}". Show them you understand what they are building.
-7. NO placeholders like [Company Name] or [Insert Link]. Use "${company}" exactly.
-8. Include a witty but professional closing line that makes them want to reply (e.g., "I'd love to briefly chat about how I can bring this same scale and engineering rigor to ${company}." or something similar).
-9. Body MUST be formatted using HTML <p> tags, keeping paragraphs very short (1-2 sentences max for skimming).
-10. At the end of the content before closing, casually but boldly suggest that if they hire you, you'll save them from buying more expensive SaaS tools because you build tools locally (to add a punchy hook).`;
+2. GREETING: Start with exactly one greeting: "Hi ${contactName}," or "Hey ${contactName},".
+3. SUBJECT LINE: Catchy brackets [] or curly braces {}.
+4. BODY: NO BOLDING. NEVER use placeholders or blanks. No fluff.
+5. THE ASK: End with: "Would you be open to a quick 17-minute coffee chat this week or next?"`;
 
-  const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-  if (!OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY is not defined in .env");
+  console.log(`   🤖 Generating humanized YC pitch for ${company}...`);
+  const result = await callAI(prompt, true);
 
-  const fallbackModels = ["openrouter/free", "google/gemma-3-27b-it:free", "mistralai/mistral-7b-instruct:free", "meta-llama/llama-3.2-1b-instruct:free"];
-  let currentModelIdx = 0;
-  let retries = 3;
-
-  while (retries > 0 && currentModelIdx < fallbackModels.length) {
-    try {
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": "http://localhost:3000",
-          "X-OpenRouter-Title": "Auto Apply Bot"
-        },
-        body: JSON.stringify({
-          model: fallbackModels[currentModelIdx],
-          messages: [{ role: "user", content: prompt }]
-        })
-      });
-
-      if (response.status === 429 || response.status === 402) {
-        currentModelIdx++;
-        if (currentModelIdx >= fallbackModels.length) {
-          await new Promise(r => setTimeout(r, 15000));
-          currentModelIdx = 0;
-          retries--;
-        }
-        continue;
-      }
-
-      if (!response.ok) throw new Error(`API error: ${response.status}`);
-
-      const result = await response.json();
-      const responseText = result.choices[0].message.content;
-
-      let parsed = { subject: "Engineering Application | Rishav Tarway", body: responseText };
-      try {
-        let content = responseText.replace(/^```[a-z]*\n/, '').replace(/\n```$/, '').trim();
-        if (content.startsWith('```')) content = content.substring(3).trim();
-        if (content.startsWith('json\n')) content = content.substring(5).trim();
-        if (content.endsWith('```')) content = content.substring(0, content.length - 3).trim();
-
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
-        else if (content.startsWith("{")) parsed = JSON.parse(content);
-      } catch (jsonErr) {
-        let safeBody = responseText.replace(/\n\n/g, '</p><p>').replace(/\n/g, ' ');
-        if (!safeBody.startsWith('<p>')) safeBody = '<p>' + safeBody + '</p>';
-        parsed = { subject: `Engineering | ${company} | Rishav Tarway`, body: safeBody };
-      }
-
-      parsed.subject = (parsed.subject || `Engineering | ${company} | Rishav Tarway`).replace(/[,\[\]\(\)]/g, '');
-      parsed.body = (parsed.body || parsed.subject).replace(/[,\[\]\(\)]/g, '');
-
-      return { subject: parsed.subject, body: `<p>${greeting},</p>${parsed.body}${SIGNATURE_HTML}` };
-    } catch (error: any) {
-      currentModelIdx++;
-    }
+  if (!result) {
+    return {
+      subject: `[Draft] Engineering at ${company}`,
+      body: `<p>${greeting}</p><p>${company}'s mission to ${mission} really resonates with me. I've spent my spare time shipping code to Open Source and recently merged PR #48 for OpenPrinting's fuzzing architecture.</p><p>I've done 6 paid internships (3 onsite, 3 remote), most notably handling core backend optimization at Classplus. I'm the guy who builds internal tools from scratch locally, which might save you a few SaaS seats.</p><p>I'd love to chat more about how I can contribute to the team. Would you be open to a quick 17-minute coffee chat this week or next?</p>${SIGNATURE_HTML}`
+    };
   }
 
-  return {
-    subject: `Software Engineer | High Scale Architecture | Rishav Tarway`,
-    body: `<p>${greeting},</p><p>I'm Rishav Tarway. I saw the great work being done at ${company} and wanted to reach out directly. I specialize in building and optimizing highly scalable software architecture.</p><p>For a quick background: I've completed 6 paid internships (3 onsite, 3 remote), most notably handling core backend optimization at Classplus. I've also spent the last 2 years deeply involved in Open Source, recently merging critical fuzzing architecture PRs for OpenPrinting.</p><p>Also, I'm the guy who builds internal tools from scratch locally, so you can probably cancel a few SaaS subscriptions if you hire me.</p><p>I know you're likely skimming this, so I'll keep it brief. I have several proof-of-work links attached to my profile, but let me know exactly what kind of PRs or projects you'd like to see for your stack, and I'll send them over.</p><p>Would love to chat about bringing this engineering rigor to ${company}.</p><p>Best,</p>${SIGNATURE_HTML}`
-  };
+  return { subject: result.subject, body: `<p>${greeting}</p>${result.body}${SIGNATURE_HTML}` };
 }
 
 // ============================================================================
@@ -692,8 +560,17 @@ async function main() {
 
   // Phase 2: Generate & Upload
   console.log(`\n🚀[PHASE 2] Connecting to Gmail and processing ${newJobs.length} new jobs...`);
-  const auth = await authorizeGmail();
-  const gmail = google.gmail({ version: 'v1', auth });
+  
+  let gmail: any;
+  try {
+    const auth = await authorizeGmail();
+    gmail = google.gmail({ version: 'v1', auth: auth as any });
+    console.log("✅ Gmail connection established.");
+  } catch (authErr: any) {
+    console.error(`\n❌ GMAIL AUTHENTICATION FAILED: ${authErr.message}`);
+    console.log("Please resolve the auth issue and restart the process.");
+    process.exit(1);
+  }
 
   for (let i = 0; i < newJobs.length; i++) {
     const job = newJobs[i];
@@ -724,7 +601,8 @@ async function main() {
             email: job.email,
             link: job.link || null, // LOG LINK IF IT HAD BOTH
             description: job.text,
-            status: 'applied'
+            status: 'applied',
+            type: 'telegram'
           })
         });
       } catch (logErr) {
@@ -733,6 +611,9 @@ async function main() {
 
     } catch (e: any) {
       console.error(`   ❌ Failed to create draft:`, e.message);
+      if (e.response) {
+        console.error(`      Error Details:`, JSON.stringify(e.response.data, null, 2));
+      }
     }
 
     // Delay 5 seconds between each job to prevent 15 RPM rate-limiting

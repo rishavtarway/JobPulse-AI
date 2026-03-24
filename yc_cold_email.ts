@@ -2,6 +2,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { google } from 'googleapis';
 import nodemailer from 'nodemailer';
+import dns from 'node:dns';
+
+// Force IPv4-first DNS resolution to fix ENOTFOUND issues in Node.js 17+
+if (typeof dns.setDefaultResultOrder === 'function') {
+  dns.setDefaultResultOrder('ipv4first');
+}
 
 // --- CONFIG & ENV ---
 const loadEnv = () => {
@@ -240,67 +246,58 @@ async function deepResearchCompany(company: string, originalMission: string, car
     console.log(`\n🔍 Agent searching deep web for: ${company}...`);
 
     let careerPageText = "";
+    const companyDomain = careerUrl ? new URL(careerUrl).hostname.replace('www.', '') : `${company.toLowerCase().replace(/\s+/g, '')}.com`;
+
+    // 1. Better search for Founders and Team
+    const searchQueries = [
+        `site:linkedin.com/in "${company}" (Founder OR CEO OR "Co-Founder" OR "CTO")`,
+        `"${company}" founders email linkedin`,
+        `"${company}" tech team members`,
+        `"${company}" ${companyDomain} email pattern hunter.io`
+    ];
+
     if (careerUrl) {
         console.log(`   🌐 Fetching career page: ${careerUrl}...`);
         careerPageText = await fetchPageContent(careerUrl);
     }
 
     const search1 = await searchWeb(`${company} startup founders YC mission problems solving funding`);
-    await new Promise(r => setTimeout(r, 1000)); // be nice to DDG
-    const search2 = await searchWeb(`${company} startup founder CEO email contact careers hiring founders@`);
+    await new Promise(r => setTimeout(r, 1000));
+    const search2 = await searchWeb(`${company} startup founder CEO email contact founders@ ${companyDomain}`);
 
     const combinedSnippets = [...search1, ...search2].map(s => `Title: ${s.title}\nSnippet: ${s.snippet}\nLink: ${s.link}`).join("\n\n");
     const uniqueLinks = [...new Set([...search1, ...search2].map(s => s.link))];
     if (careerUrl) uniqueLinks.unshift(careerUrl);
 
-    const prompt = `Analyze the search results and career page content for the startup "${company}" and extract precise information.
-
-Career Page Content (Snippet):
-${careerPageText}
-
+    const prompt = `Analyze the search results for the startup "${company}" (domain: ${companyDomain}).
+${careerPageText ? `Career Page Snippet: ${careerPageText}\n` : ''}
 Web Search Results:
 ${combinedSnippets}
 
-Extract the following as a JSON object strictly following this format. IF YOU CANNOT FIND A VALUE, RETURN AN EMPTY STRING "". DO NOT WRITE "N/A" OR "NOT FOUND"!
-
+Extract the following as a JSON object:
 {
-  "founder_names": "Names of founders (or 'Team') - attempt to find their exact names.",
-  "contact_email": "Find the DIRECT founder email. DO NOT use generic info@ or hello@ emails. Look for founders@, careers@, jobs@, or actively deduce it using the founder's first name (e.g., firstname@companydomain.com) if you found the domain and founder name. Leave blank if totally unsure.",
-  "deep_mission": "A 2-sentence summary of the core engineering problem they are solving, their mission, and recent funding/news if mentioned.",
-  "tech_stack_or_values": "What technologies they seem to use, or what engineering traits they value."
+  "founder_names": "Precise names of founders",
+  "contact_email": "Find the DIRECT founder email. Try to find name@domain or founders@domain. If you can't find it but have a founder name like 'John Doe', you can suggest 'john@${companyDomain}' or 'john.doe@${companyDomain}' as a guess. Skip generic emails like info@.",
+  "deep_mission": "2-sentence summary of what they do.",
+  "tech_stack": "Observed tech/engineering values."
 }`;
 
     let parsed = await callAI(prompt, true) || {};
-
     let discoveredEmail = parsed.contact_email || "";
-    let founders = parsed.founder_names || "";
-    if (founders.toLowerCase().includes("n/a") || founders.toLowerCase().includes("not found")) founders = "";
-    if (!founders) founders = "Founding Team";
-    if (discoveredEmail.toLowerCase().includes("n/a") || discoveredEmail.toLowerCase().includes("not found")) discoveredEmail = "";
+    let founders = parsed.founder_names || "Founding Team";
 
-    // Deep fallback search for email if not found in first pass, but founder is known
-    if ((!discoveredEmail || String(discoveredEmail).includes('info@') || String(discoveredEmail).includes('hello@') || String(discoveredEmail).length < 5) && founders !== "Founding Team" && founders.length > 2) {
-        const focusedFounders = founders.split(/[,&]/).slice(0, 2).join(' ').trim();
-        console.log(`   🕵️‍♂️ Doing deeper targeted scan for ${focusedFounders}'s exact email...`);
-        const search3 = await searchWeb(`"${focusedFounders}" "${company}" "@" email contact founders`);
-        const snippets3 = search3.map(s => `Title: ${s.title}\nSnippet: ${s.snippet}\nLink: ${s.link}`).join("\n\n");
-        const uniqueLinks3 = [...new Set(search3.map(s => s.link))];
-        uniqueLinks.push(...uniqueLinks3);
+    // Deduce email patterns if we have founder names
+    if (!discoveredEmail || discoveredEmail.includes('info@') || discoveredEmail.includes('hello@')) {
+        const founderLead = founders.split(/[,&]/)[0].trim();
+        if (founderLead && founderLead !== "Founding Team") {
+            const firstName = founderLead.split(' ')[0].toLowerCase().replace(/[^a-z]/g, '');
+            const lastName = (founderLead.split(' ')[1] || "").toLowerCase().replace(/[^a-z]/g, '');
 
-        const emailPrompt = `Analyze these deep search results and find the exact email for ${focusedFounders} at ${company}.
-        
-Search Results:
-${snippets3}
-
-Return ONLY a JSON object:
-{ "contact_email": "exact_email_or_blank" }
-Ignore info@ or support@. We want founders@, careers@, or name@domain.com.`;
-
-        const emailParsed = await callAI(emailPrompt, true) || {};
-        const foundEmail = String(emailParsed.contact_email || "");
-        if (foundEmail && foundEmail.length > 5 && !foundEmail.includes('info@')) {
-            discoveredEmail = foundEmail;
-            console.log(`   🎯 Deep scan successful: Found ${discoveredEmail}`);
+            // Prioritize founders@ or first@
+            if (!discoveredEmail) {
+                discoveredEmail = `founders@${companyDomain}`;
+                console.log(`   🕵️‍♂️ Guessing email pattern: ${discoveredEmail}`);
+            }
         }
     }
 
@@ -308,43 +305,46 @@ Ignore info@ or support@. We want founders@, careers@, or name@domain.com.`;
         founders: founders,
         discoveredEmail: discoveredEmail,
         deepMission: parsed.deep_mission || originalMission || "Building high scale technology.",
-        techStack: parsed.tech_stack_or_values || "software engineering",
+        techStack: parsed.tech_stack || "software engineering",
         sources: uniqueLinks
     };
 }
 
 async function generateAgenticDraft(company: string, research: any): Promise<{ subject: string, body: string }> {
     const prompt = `
-Generate a highly polished, eye-catching cold email application to a startup founder/HR as valid JSON.
-Startup Name: "${company}"
-Founders/Contact: "${research.founders}"
-What they are solving/Mission (Deep Research): "${research.deepMission}"
-Tech/Values: "${research.techStack}"
+Generate a minimalist, human-like cold email for a YC founder as valid JSON.
+YOU ARE RISHAV TARWAY. Write strictly in the FIRST PERSON ("I").
+NEVER mention your own name ("Rishav" or "Tarway") in the body.
+
+Mission: "${research.deepMission}"
+Tech Stack: "${research.techStack}"
+Founder Name: "${research.founders}"
+
+Applicant Facts (USE FIRST PERSON):
+- IIIT Bangalore: I built high-scale BDD test suites with the MOSIP team.
+- Classplus: I worked with the Classplus team to scale backend for 10k+ users.
+- OpenPrinting: I merged critical fuzzing layer PR #48.
+- Skills: TypeScript, Node.js, Java, Python, Selenium, AWS.
 
 STRICT RULES:
 1. Return JSON: {"subject": "...", "body": "..."}
-2. The email must be extremely punchy, designed for a 5-10 second skim by a busy Founder (${research.founders}). Make it directly relevant to their specific mission: "${research.deepMission}".
-3. Tone: Confident, crisp, highly professional but modern, NOT generic.
-4. Praise/Appreciate: Briefly praise them for their recent work/funding/mission in this specific sector.
-5. Include these exact bragging points smoothly without boasting:
-   - 2 years of Open Source contributions (including merged PRs in OpenPrinting).
-   - 6 paid internships (3 onsite, 3 remote).
-   - Backend optimization & architecture experience at Classplus scaling systems.
-6. Offer proof of work casually but confidently: "I have 5 links already shared on my profile, but let me know what specific tech stack PRs/links you want to see, and I will share them."
-7. NO placeholders like [Company Name] or [Insert Link]. Use "${company}" exactly.
-8. Include a witty but professional closing line that makes them want to reply.
-9. At the end before closing, casually suggest that if they hire you, you'll save them from buying more expensive SaaS tools because you build tools locally (to add a punchy hook).
-10. Body MUST be formatted using HTML <p> tags, keeping paragraphs very short (1-2 sentences max format for skimming).`;
+2. GREETING: Start with exactly one greeting: "Hi ${research.founders.split(' ')[0]}," or "Hey ${research.founders.split(' ')[0]},".
+3. SUBJECT LINE: Catchy brackets [] or curly braces {}.
+   Example: "[Quick Question] ${company} architecture", "{Startup Inquiry} Re: ${company}".
+4. BODY: NO BOLDING. NEVER use your own name in the sentences. 
+5. THE ASK: End with: "Would you be open to a quick 17-minute coffee chat this week or next?"`;
 
     const parsed = await callAI(prompt, true);
     if (parsed && parsed.subject && parsed.body) {
-        parsed.subject = parsed.subject.replace(/[,\[\]\(\)]/g, '');
-        return { subject: parsed.subject, body: parsed.body + SIGNATURE_HTML };
+        return { subject: parsed.subject, body: parsed.body };
     }
 
     return {
-        subject: `Software Engineer | High Scale Architecture | Rishav Tarway`,
-        body: `<p>Hi ${research.founders},</p><p>I'm Rishav Tarway. I've been researching ${company} and am incredibly impressed by your mission: ${research.deepMission}. I specialize in building and optimizing highly scalable software architecture.</p><p>For a quick background: I've completed 6 paid internships (3 onsite, 3 remote), most notably handling core backend optimization at Classplus. I've also spent the last 2 years deeply involved in Open Source, recently merging critical fuzzing architecture PRs for OpenPrinting.</p><p>Also, I'm the guy who builds internal tools from scratch locally, so you can probably cancel a few SaaS subscriptions if you hire me.</p><p>I know you're likely skimming this, so I'll keep it brief. I have several proof-of-work links attached to my profile, but let me know exactly what kind of PRs or projects you'd like to see for your stack, and I'll send them over.</p><p>Would love to chat about bringing this engineering rigor to ${company}.</p><p>Best,</p>${SIGNATURE_HTML}`
+        subject: `Building ${company} | Software Engineer`,
+        body: `<p>Hey ${research.founders.split(' ')[0]} - I've been following ${company} and am impressed by how you're solving ${research.deepMission.substring(0, 100)}.</p>
+<p>I'm reaching out because I want to help you build the product. I've completed 6 paid internships and spend my time shipping code to Open Source (recently merged PRs for OpenPrinting).</p>
+<p>I think I can help you ship faster and wouldn't need any SaaS tools because I build my own utilities locally.</p>
+<p>Do you have 10 minutes to chat next week?</p>`
     };
 }
 
@@ -457,7 +457,8 @@ async function main() {
                     channel: "YC Research Agent",
                     email: finalEmail || "No Email Discovered",
                     description: `RESEARCH DATA:\nFounders: ${research.founders}\nMission: ${research.deepMission}\nTech: ${research.techStack}\n\nSources:\n${research.sources.slice(0, 3).join('\n')}`,
-                    status: finalEmail ? 'applied' : 'to_apply'
+                    status: finalEmail ? 'applied' : 'to_apply',
+                    type: 'yc'
                 })
             });
         } catch (e) { }

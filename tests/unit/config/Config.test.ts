@@ -7,7 +7,7 @@ describe('Config', () => {
     originalEnv = { ...process.env };
     // Clear singleton instance for testing
     (Config as any).instance = undefined;
-    
+
     // Clear test environment variables that might interfere
     delete process.env.SESSION_DIR;
     delete process.env.SERVER_NAME;
@@ -63,7 +63,7 @@ describe('Config', () => {
 
       const config = Config.getInstance();
 
-      expect(config.server.name).toBe('telegram-mcp-server');
+      expect(config.server.name).toBe('JobPulse-AI');
       expect(config.server.version).toBe('1.0.0');
       expect(config.server.nodeEnv).toBe('production');
     });
@@ -88,7 +88,7 @@ describe('Config', () => {
       delete process.env.TELEGRAM_API_ID;
       delete process.env.TELEGRAM_API_HASH;
       delete process.env.TELEGRAM_PHONE;
-      
+
       expect(() => Config.getInstance()).toThrow();
     });
   });

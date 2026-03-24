@@ -42,37 +42,25 @@ console.log(`${'═'.repeat(56)}\n`);
 
 // Start the main dashboard server
 const dashboardServer = spawn('npx', ['tsx', 'server.ts'], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-    cwd: process.cwd()
+    stdio: 'inherit',
+    cwd: process.cwd(),
+    shell: true
 });
 
-dashboardServer.stdout?.on('data', (d: Buffer) => process.stdout.write(`[DASHBOARD] ${d}`));
-dashboardServer.stderr?.on('data', (d: Buffer) => {
-    const text = d.toString();
-    if (!text.includes('[INFO]') && !text.includes('DEBUG')) {
-        process.stderr.write(`[DASHBOARD] ${text}`);
-    }
-});
 dashboardServer.on('exit', (code: number | null) => {
-    console.log(`\n[DASHBOARD] Server exited with code ${code}`);
-    process.exit(code ?? 0);
+    console.log(`\n[DASHBOARD] Server process ended with code ${code}`);
+    // Don't force exit the whole system immediately, let the user see the logs
 });
 
 // Start the form-filler server for the Chrome extension
 const formFillerServer = spawn('npx', ['tsx', 'form_filler_server.ts'], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-    cwd: process.cwd()
+    stdio: 'inherit',
+    cwd: process.cwd(),
+    shell: true
 });
 
-formFillerServer.stdout?.on('data', (d: Buffer) => process.stdout.write(`[FORM-FILLER] ${d}`));
-formFillerServer.stderr?.on('data', (d: Buffer) => {
-    const text = d.toString();
-    if (!text.includes('[INFO]') && !text.includes('DEBUG')) {
-        process.stderr.write(`[FORM-FILLER] ${text}`);
-    }
-});
 formFillerServer.on('exit', (code: number | null) => {
-    console.log(`\n[FORM-FILLER] Server exited with code ${code}`);
+    console.log(`\n[FORM-FILLER] Server process ended with code ${code}`);
 });
 
 // Graceful shutdown

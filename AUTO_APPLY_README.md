@@ -4,7 +4,7 @@ This directory contains a fully automated workflow designed to fetch recent job 
 
 ## Setup Requirements
 
-To use this workflow, ensure the following are present in the `telegram-mcp` directory:
+To use this workflow, ensure the following are present in the `JobPulse-AI` directory:
 1. **`.env` file**: Must contain `OPENROUTER_API_KEY=your_key_here`. (This connects to the free `gemini-2.5-flash-lite` model for generating text).
 2. **`credential.json` & `token.json`**: These are required to authenticate the script with your Google/Gmail account so it can create the drafts.
 3. **Your 4 PDF Documents**: The script explicitly looks for and attaches the following 4 files:

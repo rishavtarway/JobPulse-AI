@@ -1,5 +1,5 @@
 {
-  "name": "telegram-mcp-server",
+  "name": "JobPulse-AI",
   "version": "1.0.0",
   "description": "MCP server for Telegram integration",
   "main": "dist/index.js",

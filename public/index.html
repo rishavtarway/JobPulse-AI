@@ -4,103 +4,89 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JobPulse AI — Premium Cold Outreach</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <title>JobPulse AI | Premium Job Intelligence</title>
+    <link rel="icon" type="image/png" href="favicon.png">
     <link
-        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@800&family=JetBrains+Mono&display=swap"
         rel="stylesheet">
     <style>
         :root {
-            --bg: #030712;
-            --surface: rgba(17, 24, 39, 0.8);
-            --card: rgba(31, 41, 55, 0.6);
-            --card-hover: rgba(31, 41, 55, 0.9);
-            --border: rgba(255, 255, 255, 0.08);
-            --border-hover: rgba(255, 255, 255, 0.15);
-            --accent: #a5b4fc;
-            --accent-bright: #6366f1;
-            --secondary: #5eead4;
-            --danger: #f87171;
-            --success: #34d399;
-            --text-primary: #ffffff;
-            --text-secondary: #cbd5e1;
-            --text-muted: #64748b;
+            --bg: #F3F5F7;
+            --surface: #ffffff;
+            --card: #ffffff;
+            --border: #e2e8f0;
+            --accent: #FF5C00;
+            --accent-glow: rgba(255, 92, 0, 0.2);
+            --dark: #293547;
+            --text-primary: #1A202C;
+            --text-secondary: #4A5568;
+            --text-muted: #A0AEC0;
             --font-main: 'Plus Jakarta Sans', sans-serif;
-            --font-heading: 'Outfit', sans-serif;
-            --font-mono: 'JetBrains Mono', monospace;
-            --noise: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+            --radius-lg: 32px;
+            --radius-md: 16px;
+            --header-bg: rgba(255, 255, 255, 0.7);
+            --dots: #CED4DA;
+            --tab-bg: #E9ECEF;
+            --tab-active-bg: #293547;
+            --tab-active-text: #ffffff;
+            --btn-primary-bg: #293547;
+            --btn-primary-text: #ffffff;
+        }
+
+        [data-theme="dark"] {
+            --bg: #0B0F1A;
+            --surface: #1E293B;
+            --card: #1E293B;
+            --border: #334155;
+            --text-primary: #F8FAFC;
+            --text-secondary: #CBD5E1;
+            --text-muted: #64748B;
+            --header-bg: rgba(15, 23, 42, 0.8);
+            --accent-glow: rgba(255, 92, 0, 0.4);
+            --dots: #1e293b;
+            --tab-bg: #334155;
+            --tab-active-bg: var(--accent);
+            --tab-active-text: #ffffff;
+            --btn-primary-bg: var(--accent);
+            --btn-primary-text: #ffffff;
+        }
+
+        /* DOT GRID BACKGROUND */
+        body {
+            background-color: var(--bg);
+            background-image: radial-gradient(var(--dots) 1px, transparent 1px);
+            background-size: 24px 24px;
+            color: var(--text-primary);
+            font-family: var(--font-main);
+            overflow-x: hidden;
+            scroll-behavior: smooth;
+            -webkit-font-smoothing: antialiased;
         }
 
         * {
             box-sizing: border-box;
-            margin: 0;
             padding: 0;
-            -webkit-font-smoothing: antialiased;
+            margin: 0;
         }
 
-        body {
-            font-family: var(--font-main);
-            background: var(--bg);
-            color: var(--text-primary);
-            min-height: 100vh;
-            line-height: 1.6;
-            overflow-x: hidden;
-            position: relative;
-        }
-
-        body::before {
-            content: "";
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-image: var(--noise);
-            opacity: 0.03;
-            pointer-events: none;
-            z-index: 10000;
-        }
-
-        .bg-mesh {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background:
-                radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
-                radial-gradient(at 100% 0%, rgba(45, 212, 191, 0.1) 0px, transparent 50%),
-                radial-gradient(at 100% 100%, rgba(236, 72, 153, 0.08) 0px, transparent 50%),
-                radial-gradient(at 0% 100%, rgba(20, 184, 166, 0.1) 0px, transparent 50%);
-            z-index: -1;
-            filter: blur(80px);
-        }
-
-        ::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: var(--bg);
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: var(--border-hover);
-            border-radius: 10px;
-        }
-
+        /* GLASSMORPHIC FLOATING HEADER */
         .header {
-            background: rgba(2, 6, 23, 0.8);
-            backdrop-filter: blur(12px) saturate(180%);
-            border-bottom: 1px solid var(--border);
-            padding: 16px 32px;
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: calc(100% - 40px);
+            max-width: 1400px;
+            height: 72px;
+            background: var(--header-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            z-index: 2000;
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            position: sticky;
-            top: 0;
-            z-index: 2000;
+            padding: 0 24px;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.03);
         }
 
         .header-brand {
@@ -109,968 +95,830 @@
             gap: 12px;
         }
 
-        .logo-sphere {
+        .logo-box {
             width: 32px;
             height: 32px;
-            background: linear-gradient(135deg, var(--accent-bright), var(--secondary));
-            border-radius: 50%;
+            background: var(--accent);
+            border-radius: 8px;
             display: flex;
             align-items: center;
             justify-content: center;
+            color: #fff;
+            font-weight: 900;
             font-size: 16px;
-            box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
         }
 
         .header h1 {
-            font-family: var(--font-heading);
-            font-size: 18px;
-            font-weight: 700;
-            letter-spacing: -0.025em;
-            background: linear-gradient(to right, #fff, var(--text-secondary));
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
+            font-family: 'Outfit', sans-serif;
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--text-primary);
         }
 
-        .page-wrapper {
-            max-width: 1400px;
-            width: 100%;
-            margin: 0 auto;
-            padding: 32px 24px 100px;
-            display: grid;
-            grid-template-columns: minmax(0, 1fr);
-            gap: 40px;
-            animation: fadeIn 0.8s ease-out;
-            overflow-x: hidden;
-        }
-
-        @media (min-width: 1024px) {
-            .page-wrapper {
-                grid-template-columns: 320px minmax(0, 1fr);
-                align-items: start;
-            }
-
-            .sidebar-sticky {
-                position: sticky;
-                top: 80px;
-                height: calc(100vh - 120px);
-                overflow-y: auto;
-                padding-right: 8px;
-                /* For scrollbar */
-            }
-
-            .sidebar-sticky::-webkit-scrollbar {
-                width: 4px;
-            }
-
-            .sidebar-sticky::-webkit-scrollbar-thumb {
-                background: var(--border);
-                border-radius: 10px;
-            }
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .glass-card {
-            background: var(--surface);
-            backdrop-filter: blur(8px);
-            border: 1px solid var(--border);
-            border-radius: 20px;
-            padding: 24px;
-            margin-bottom: 24px;
-            transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
-            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-        }
-
-        .glass-card:hover {
-            border-color: var(--border-hover);
-        }
-
-        .section-label {
-            font-family: var(--font-mono);
-            font-size: 10px;
-            text-transform: uppercase;
-            letter-spacing: 0.15em;
-            color: var(--accent);
-            margin-bottom: 20px;
+        /* HERO / STATS SECTION */
+        .dashboard-root {
+            margin-top: 120px;
+            padding: 0 20px 80px;
+            /* Reduced side padding */
             display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .section-label::after {
-            content: "";
-            height: 1px;
-            flex-grow: 1;
-            background: linear-gradient(90deg, var(--border-hover), transparent);
-        }
-
-        .action-button {
-            width: 100%;
-            padding: 16px;
-            background: #fff;
-            color: #000;
-            border: none;
-            border-radius: 12px;
-            font-family: var(--font-heading);
-            font-size: 15px;
-            font-weight: 700;
-            cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            display: flex;
-            align-items: center;
             justify-content: center;
-            gap: 10px;
+            width: 100%;
+            overflow: visible; /* CRITICAL: Must be visible for position: sticky to work */
         }
 
-        .action-button:hover:not(:disabled) {
-            background: var(--accent-bright);
-            color: #fff;
-            box-shadow: 0 10px 20px -5px rgba(99, 102, 241, 0.5);
-        }
-
-        .action-button:disabled {
-            background: var(--text-muted);
-            opacity: 0.5;
-            color: #fff;
-            cursor: not-allowed;
-        }
-
-        .stats-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            margin-top: 24px;
-        }
-
-        .stat-pill {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 16px;
-            text-align: center;
-        }
-
-        .stat-val {
-            font-family: var(--font-heading);
-            font-size: 24px;
-            font-weight: 700;
-            color: #fff;
-        }
-
-        .stat-label {
-            font-size: 11px;
-            color: var(--text-secondary);
-            margin-top: 4px;
-        }
-
-        .cyber-tabs {
-            background: rgba(0, 0, 0, 0.25);
-            border: 1px solid var(--border);
-            border-radius: 14px;
-            padding: 5px;
+        .dashboard-content {
+            width: 100%;
+            max-width: 1280px;
+            /* More standard focused width */
             display: flex;
-            gap: 4px;
-            margin: 24px 0;
+            gap: 32px;
+            align-items: flex-start;
         }
 
-        .cyber-tab {
-            flex: 1;
-            padding: 10px;
-            font-size: 12px;
-            font-weight: 600;
-            color: var(--text-muted);
-            border-radius: 10px;
-            cursor: pointer;
-            text-align: center;
-            transition: all 0.25s;
+        .sidebar {
+            width: 340px;
+            /* Slightly wider for better utility */
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            position: sticky;
+            top: 110px;
+            height: fit-content;
         }
 
-        .cyber-tab:hover {
-            color: var(--text-secondary);
+        .main-column {
+            flex-grow: 1;
+            min-width: 0;
+            max-width: 800px;
+            /* Constrain to prevent elements drifting too far right */
         }
 
-        .cyber-tab.active {
+        /* BENTO BOX CARD */
+        .bento-card {
             background: var(--surface);
-            color: #fff;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            border-radius: var(--radius-lg);
+            padding: 32px;
             border: 1px solid var(--border);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.02);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
         }
 
-        .tab-content {
+        .bento-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.04);
+        }
+
+        /* TABS - DESIGNFOLIO PILL STYLE */
+        .tab-row {
+            display: inline-flex;
+            background: var(--tab-bg);
+            padding: 6px;
+            border-radius: 100px;
+            margin-bottom: 40px;
+        }
+
+        .tab {
+            padding: 10px 24px;
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            border-radius: 100px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .tab.active {
+            background: var(--tab-active-bg);
+            color: var(--tab-active-text);
+        }
+
+        /* NAVIGATION PILLS - CHANNEL DIFFERENTIATORS */
+        .pill-row {
+            display: flex;
+            gap: 14px;
+            margin-bottom: 32px;
+            overflow-x: auto;
+            padding: 12px 24px;
+            background: var(--surface);
+            backdrop-filter: blur(24px);
+            border-radius: 20px;
+            scrollbar-width: none;
+            align-items: center;
+            position: sticky;
+            top: 100px; /* Below main header (which ends at 92px) */
+            z-index: 1500;
+            border: 1px solid var(--border);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+        }
+
+        .pill-row::-webkit-scrollbar {
             display: none;
         }
 
-        .tab-content.active {
-            display: block;
+        .pill-label {
+            font-size: 10px;
+            font-weight: 900;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-right: 12px;
+            white-space: nowrap;
         }
 
-        .terminal-container {
-            background: rgba(0, 0, 0, 0.4);
+        .nav-pill {
+            background: var(--bg);
+            color: var(--text-primary);
+            padding: 10px 20px;
+            border-radius: 14px;
+            font-size: 13px;
+            font-weight: 700;
+            text-decoration: none;
+            white-space: nowrap;
+            transition: all 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
             border: 1px solid var(--border);
-            border-radius: 20px;
-            padding: 24px;
-            height: 500px;
-            overflow-y: auto;
-            font-family: var(--font-mono);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+        }
+
+        .nav-pill:hover {
+            transform: translateY(-2px);
+            background: var(--dark);
+            color: #fff;
+            border-color: var(--dark);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .nav-pill::before {
+            content: '🔗';
             font-size: 12px;
-            line-height: 1.8;
-            color: #cbd5e1;
+            opacity: 0.5;
         }
 
-        .terminal-container b {
-            color: var(--secondary);
-            font-weight: 500;
-        }
-
-        .terminal-container i {
-            color: var(--accent);
-            font-style: normal;
-        }
-
-        .tracker-item {
-            background: var(--card);
-            border: 1px solid var(--border);
-            border-radius: 20px;
-            padding: 24px;
-            margin-bottom: 16px;
-            cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
-            display: grid;
-            grid-template-columns: minmax(0, 1fr);
-            gap: 16px;
-            position: relative;
-        }
-
-        @media (min-width: 640px) {
-            .tracker-item {
-                grid-template-columns: auto minmax(0, 1fr) auto;
-                align-items: center;
-                gap: 24px;
-            }
-        }
-
-        .tracker-item:hover {
-            border-color: var(--border-hover);
-            background: var(--card-hover);
-        }
-
-        @keyframes slideUpFade {
-            from {
-                opacity: 0;
-                transform: translateY(30px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .fade-stagger>* {
-            opacity: 0;
-            animation: slideUpFade 0.8s cubic-bezier(0.23, 1, 0.32, 1) forwards;
-        }
-
-        .fade-stagger>*:nth-child(1) {
-            animation-delay: 0.1s;
-        }
-
-        .fade-stagger>*:nth-child(2) {
-            animation-delay: 0.2s;
-        }
-
-        .fade-stagger>*:nth-child(3) {
-            animation-delay: 0.3s;
-        }
-
-        .fade-stagger>*:nth-child(4) {
-            animation-delay: 0.4s;
-        }
-
-        .glass-card::after {
-            content: "";
-            position: absolute;
-            inset: 0;
-            background: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(255, 255, 255, 0.06) 0%, transparent 60%);
-            opacity: 0;
-            transition: opacity 0.3s;
-            pointer-events: none;
-        }
-
-        .glass-card:hover::after {
+        .nav-pill:hover::before {
             opacity: 1;
         }
 
-        .btn-link {
-            background: linear-gradient(135deg, var(--accent-bright), var(--accent));
-            color: #fff;
-            padding: 12px 24px;
-            border-radius: 12px;
-            font-weight: 700;
-            font-family: var(--font-heading);
-            text-decoration: none;
-            display: inline-flex;
+        /* CHANNEL BLOCKS & HEADERS */
+        .chan-block {
+            margin-bottom: 120px;
+            scroll-margin-top: 250px; /* High margin so jump leaves room for both sticky navs */
+            padding-bottom: 40px;
+            border-bottom: 2px dashed var(--border);
+        }
+
+        .chan-head {
+            display: flex;
             align-items: center;
-            gap: 10px;
-            transition: all 0.3s;
-            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .btn-link:hover {
-            transform: scale(1.03);
-            box-shadow: 0 8px 25px rgba(99, 102, 241, 0.5);
-        }
-
-        .tracker-icon {
-            width: 48px;
-            height: 48px;
-            background: rgba(255, 255, 255, 0.03);
+            justify-content: space-between;
+            margin-bottom: 32px;
+            padding: 20px 32px;
+            background: var(--surface);
+            color: var(--text-primary);
+            border-radius: 20px;
+            position: sticky;
+            top: 170px; /* Below pill-row which is at 100px + ~64px height */
+            z-index: 1400;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
             border: 1px solid var(--border);
-            border-radius: 14px;
+        }
+
+        .chan-head h2 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 24px;
+            font-weight: 800;
+            color: var(--text-primary);
+        }
+
+        .chan-meta {
+            font-size: 11px;
+            font-weight: 900;
+            color: rgba(255, 255, 255, 0.6);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        /* JOB CARDS - BENTO STYLE */
+        .job-card {
+            background: var(--surface);
+            border-radius: 24px;
+            /* Slightly tighter corners for better space */
+            padding: 24px;
+            /* Optimized padding */
+            margin-bottom: 20px;
+            position: relative;
+            border: 1px solid var(--border);
+            transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+            word-wrap: break-word;
+            overflow: hidden;
+        }
+
+        .job-card:hover {
+            border-color: var(--accent);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.04);
+        }
+
+        .latest-ribbon {
+            position: absolute;
+            top: 0;
+            left: 24px;
+            background: var(--accent);
+            color: #fff;
+            padding: 4px 10px;
+            border-radius: 0 0 6px 6px;
+            font-size: 9px;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+            z-index: 10;
+        }
+
+        .job-ico {
+            width: 64px;
+            height: 64px;
+            background: var(--bg);
+            border-radius: 20px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 20px;
+            font-size: 32px;
+            margin-bottom: 20px;
         }
 
-        .tracker-info {
-            min-width: 0;
-            word-break: break-word;
-        }
-
-        .tracker-info h3 {
-            font-family: var(--font-heading);
-            font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 2px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .tracker-info p {
-            font-size: 13px;
-            color: var(--text-secondary);
-        }
-
-        .status-badge {
-            font-size: 11px;
-            font-weight: 600;
-            padding: 4px 12px;
-            border-radius: 30px;
-            text-transform: capitalize;
-        }
-
-        .st-applied {
-            background: rgba(129, 140, 248, 0.1);
-            color: #818cf8;
-            border: 1px solid rgba(129, 140, 248, 0.2);
-        }
-
-        .st-to_apply {
-            background: rgba(45, 212, 191, 0.1);
-            color: #2dd4bf;
-            border: 1px solid rgba(45, 212, 191, 0.2);
-        }
-
-        .st-technical_round {
-            background: rgba(245, 158, 11, 0.1);
-            color: #f59e0b;
-            border: 1px solid rgba(245, 158, 11, 0.2);
-        }
-
-        .progress-line {
-            display: flex;
-            gap: 6px;
-            margin-top: 12px;
-        }
-
-        .p-dot {
-            height: 4px;
-            flex: 1;
-            background: var(--border);
-            border-radius: 4px;
-            transition: all 0.6s;
-        }
-
-        .p-dot.done {
-            background: var(--accent);
-            opacity: 0.5;
-        }
-
-        .p-dot.current {
-            background: var(--accent);
-            box-shadow: 0 0 10px var(--accent);
-        }
-
-        .chan-chip {
-            font-family: var(--font-mono);
-            font-size: 10px;
-            color: var(--accent);
-            opacity: 0.7;
+        .job-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--dark);
             margin-bottom: 4px;
-            display: inline-block;
         }
 
-        /* OTP Elements */
-        #otp-box,
-        #password-box {
-            display: none;
-            background: rgba(245, 158, 11, 0.05);
-            border: 1px solid rgba(245, 158, 11, 0.2);
-            border-radius: 16px;
-            padding: 20px;
-            margin-bottom: 24px;
-            animation: pulseWarning 2s infinite;
+        .job-meta {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-bottom: 20px;
         }
 
-        @keyframes pulseWarning {
-
-            0%,
-            100% {
-                border-color: rgba(245, 158, 11, 0.2);
-            }
-
-            50% {
-                border-color: rgba(245, 158, 11, 0.5);
-            }
-        }
-
-        .otp-input {
-            width: 100%;
-            background: rgba(0, 0, 0, 0.3);
+        .job-desc {
+            background: var(--bg);
+            border-radius: 12px;
+            padding: 16px;
+            font-size: 13px;
+            line-height: 1.5;
+            color: var(--text-secondary);
+            max-height: 120px;
+            overflow-y: auto;
+            position: relative;
             border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 12px;
+        }
+
+        /* BUTTONS - HIGH CONTRAST */
+        .btn-pill {
+            padding: 14px 28px;
+            border-radius: 100px;
+            font-weight: 800;
+            font-size: 14px;
+            cursor: pointer;
+            transition: 0.3s;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background: var(--btn-primary-bg);
+            color: var(--btn-primary-text);
+        }
+
+        .btn-primary:hover {
+            background: var(--accent);
+        }
+
+        .btn-orange {
+            background: var(--accent);
             color: #fff;
+        }
+
+        .btn-orange:hover {
+            background: var(--dark);
+        }
+
+        /* TERMINAL - SLEEK DARK BENTO */
+        .terminal-bento {
+            background: #000;
+            border-radius: var(--radius-lg);
+            padding: 32px;
+            margin-bottom: 40px;
+            border: 1px solid #333;
+        }
+
+        .terminal-screen {
             font-family: var(--font-mono);
-            font-size: 18px;
-            text-align: center;
-            margin: 12px 0;
-            outline: none;
+            font-size: 13px;
+            color: #eee;
+            height: 300px;
+            overflow-y: auto;
+            line-height: 1.7;
         }
 
-        .otp-input:focus {
-            border-color: var(--accent);
+        /* REVEAL ANIMATION */
+        .reveal {
+            opacity: 0;
+            transform: translateY(20px);
+            animation: revealFade 0.6s cubic-bezier(0.165, 0.84, 0.44, 1) forwards;
         }
 
+        @keyframes revealFade {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .terminal-screen b {
+            color: #fff;
+        }
+
+        /* STATUS TAGS */
+        .status-tag {
+            padding: 6px 14px;
+            border-radius: 100px;
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+        }
+
+        .tag-applied {
+            background: #E6FFFA;
+            color: #2C7A7B;
+        }
+
+        .tag-todo {
+            background: #FFF5F5;
+            color: #C53030;
+        }
+
+        /* MODAL - GLASSMORPHIC BENTO */
         .modal {
             position: fixed;
             inset: 0;
-            background: rgba(0, 0, 0, 0.8);
-            backdrop-filter: blur(8px);
+            background: rgba(41, 53, 71, 0.2);
+            backdrop-filter: blur(15px);
             display: none;
             align-items: center;
             justify-content: center;
             z-index: 5000;
         }
 
-        .modal.active {
-            display: flex;
+        .modal-card {
+            background: var(--surface);
+            border-radius: var(--radius-lg);
+            padding: 48px;
+            width: 100%;
+            max-width: 600px;
+            border: 1px solid var(--border);
+            box-shadow: 0 30px 100px rgba(0, 0, 0, 0.1);
         }
 
-        .modal-card {
+        .input-st {
+            width: 100%;
+            padding: 18px;
             background: var(--bg);
             border: 1px solid var(--border);
-            border-radius: 24px;
-            padding: 32px;
-            width: 100%;
-            max-width: 500px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            border-radius: 20px;
+            font-size: 15px;
+            margin-bottom: 24px;
+            outline: none;
+            font-family: inherit;
+            transition: 0.2s;
+            color: var(--text-primary);
         }
 
-        .toast {
+        .input-st:focus {
+            border-color: var(--accent);
+            background: #fff;
+            box-shadow: 0 0 0 4px var(--accent-glow);
+        }
+
+        .btn-action {
+            padding: 18px 32px;
+            border-radius: 100px;
+            font-weight: 800;
+            font-size: 15px;
+            cursor: pointer;
+            transition: 0.3s;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .btn-sub {
+            background: var(--tab-bg);
+            color: var(--text-primary);
+        }
+
+        .btn-sub:hover {
+            background: #dee2e6;
+        }
+
+        .btn-act-orange {
+            background: var(--accent);
+            color: #fff;
+        }
+
+        .btn-act-orange:hover {
+            background: var(--dark);
+            transform: scale(1.02);
+        }
+
+        #toast {
             position: fixed;
-            bottom: 32px;
-            right: 32px;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            padding: 14px 24px;
-            border-radius: 14px;
-            font-size: 13px;
-            font-weight: 600;
-            opacity: 0;
-            transform: translateY(20px);
-            transition: all 0.3s;
-            z-index: 6000;
+            bottom: 40px;
+            right: 40px;
+            background: var(--dark);
+            color: #fff;
+            padding: 16px 32px;
+            border-radius: 100px;
+            font-weight: 700;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            display: none;
+            z-index: 10000;
         }
 
-        .toast.show {
+        .back-to-top {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 56px;
+            height: 56px;
+            background: var(--dark);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 1000;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s;
+        }
+
+        .back-to-top.visible {
             opacity: 1;
-            transform: translateY(0);
+            visibility: visible;
+        }
+
+        .back-to-top:hover {
+            background: var(--accent);
+            transform: scale(1.1);
         }
     </style>
 </head>
 
 <body>
-    <div class="bg-mesh"></div>
-
-    <header class="header">
+    <div class="header">
         <div class="header-brand">
-            <div class="logo-sphere">⚡</div>
-            <h1>JobPulse <span style="font-weight:300; opacity:0.5; font-size:14px; margin-left:6px;">AI Outreach</span>
-            </h1>
+            <div class="logo-box">J</div>
+            <h1>JobPulse AI</h1>
         </div>
-        <div id="status-header">
-            <div class="status-badge st-applied" style="background:rgba(255,255,255,0.05); color:var(--text-secondary)">
-                Scanning Service: Idle</div>
+        
+        <button id="theme-toggle" onclick="toggleTheme()" 
+            style="margin-left:24px; background:var(--surface); border:1px solid var(--border); color:var(--text-primary); padding:8px 12px; border-radius:12px; cursor:pointer; font-size:14px; font-weight:700; display:flex; align-items:center; gap:8px;">
+            <span id="theme-icon">🌙</span>
+        </button>
+
+        <div id="ai-status"
+            style="font-size:12px; font-weight:800; background:rgba(0,0,0,0.05); padding:8px 16px; border-radius:100px; display:flex; align-items:center; gap:8px; margin-left:auto; color:var(--text-primary);">
+            <span id="ai-dot" style="width:8px; height:8px; background:var(--text-muted); border-radius:50%;"></span>
+            AI SIGNAL: READY
         </div>
-    </header>
+    </div>
 
-    <div class="page-wrapper fade-stagger">
-        <aside class="sidebar-sticky">
-            <div class="glass-card">
-                <div class="section-label">Commands</div>
-                <button class="action-button" id="btn-trigger" onclick="triggerScript()">
-                    ✨ FETCH & AUTO-APPLY
-                </button>
-                <button class="action-button" id="btn-stop" onclick="stopScript()"
-                    style="margin-top: 12px; background: rgba(239, 68, 68, 0.1); color: var(--danger); display: none; border: 1px solid rgba(239, 68, 68, 0.2);">
-                    🛑 STOP PROCESS
-                </button>
-                <div style="font-size:11px; text-align:center; color:var(--text-muted); margin-top:12px;">
-                    Last Process: <span id="last-run-time">—</span>
-                </div>
-            </div>
+    <!-- MAIN DASHBOARD -->
+    <div class="dashboard-root">
+        <div class="dashboard-content">
 
-            <div class="glass-card" style="margin-top: 16px;">
-                <div class="section-label">YC Pitch Engine</div>
-                <textarea id="yc-text-input" placeholder="Paste raw text of startup names, emails, and context here..."
-                    style="width:100%; height:100px; padding:12px; background:var(--card); border:1px solid var(--border); border-radius:12px; color:#fff; font-family:inherit; font-size:12px; margin-bottom:12px; resize:vertical;"></textarea>
-                <button class="action-button" id="btn-trigger-yc" onclick="triggerYCScript()"
-                    style="background:var(--accent-bright); color:#fff; font-size:12px; width:100%;">
-                    🚀 DRAFT YC PITCHES
-                </button>
-            </div>
+            <!-- SIDEBAR BENTO -->
+            <div class="sidebar">
+                <div class="bento-card">
+                    <p
+                        style="font-size:10px; font-weight:900; color:var(--text-muted); margin-bottom:20px; letter-spacing:0.1em; text-transform:uppercase;">
+                        Control Center</p>
 
-            <div id="otp-box">
-                <div style="font-family:var(--font-heading); font-weight:700; color:#f59e0b;">Verification Required
-                </div>
-                <p style="font-size:12px; color:var(--text-secondary); margin-top:4px;">Enter the code from Telegram:
-                </p>
-                <input type="text" id="otp-input" class="otp-input" placeholder="00000" maxlength="5">
-                <button class="action-button" style="background:#f59e0b; color:#000;" onclick="submitOtp()">VERIFY
-                    OTP</button>
-            </div>
+                    <div id="otp-panel" style="display:none; text-align:center; margin-bottom:20px;">
+                        <input type="text" id="otp-input" class="input-st"
+                            style="text-align:center; font-size:20px; border-radius:12px;" placeholder="OTP">
+                        <button class="btn-pill btn-orange" style="width:100%" onclick="submitOtp()">VALIDATE</button>
+                    </div>
 
-            <div id="password-box">
-                <div style="font-family:var(--font-heading); font-weight:700; color:var(--accent);">2FA Security</div>
-                <p style="font-size:12px; color:var(--text-secondary); margin-top:4px;">Enter your cloud password:</p>
-                <input type="password" id="password-input" class="otp-input" style="text-align:left; font-size:14px;">
-                <button class="action-button" style="background:var(--accent-bright); color:#fff;"
-                    onclick="submitPassword()">UNLOCK</button>
-            </div>
+                    <button id="btn-trigger" class="btn-pill btn-orange" style="width:100%" onclick="startDiscovery()">✨
+                        START AUTO-DISCOVERY</button>
+                    <button id="btn-stop" class="btn-pill btn-primary"
+                        style="width:100%; margin-top:12px; display:none;" onclick="stopDiscovery()">🛑 STOP
+                        PROCESS</button>
 
-            <div class="stats-grid">
-                <div class="stat-pill">
-                    <div class="stat-val" id="stat-total">0</div>
-                    <div class="stat-label">Total Jobs</div>
-                </div>
-                <div class="stat-pill">
-                    <div class="stat-val" id="stat-applied">0</div>
-                    <div class="stat-label">Drafts</div>
-                </div>
-            </div>
-
-            <div class="cyber-tabs">
-                <div class="cyber-tab active" onclick="switchTab('terminal')">Logs</div>
-                <div class="cyber-tab" onclick="switchTab('manual')">Manual Tasks</div>
-                <div class="cyber-tab" onclick="switchTab('tracker')">Pipeline</div>
-            </div>
-
-            <div class="glass-card" style="padding: 20px;">
-                <div class="section-label">Engine Health</div>
-                <div style="font-size:11px; color:var(--text-secondary); display:flex; flex-direction:column; gap:8px;">
-                    <div style="display:flex; justify-content:space-between;"><span>AI Models</span><span id="ai-status"
-                            style="color:var(--success)">OFFLINE</span></div>
-                    <div style="display:flex; justify-content:space-between;"><span>Gmail</span><span
-                            style="color:var(--success)">LINKED</span></div>
-                </div>
-            </div>
-        </aside>
-
-        <main class="content-area">
-            <div id="tab-terminal" class="tab-content active">
-                <div class="section-label" style="margin-left:8px;">Live Process Streams</div>
-                <div id="terminal" class="terminal-container">🚀 Initializing system core...</div>
-            </div>
-
-            <div id="tab-manual" class="tab-content">
-                <div class="section-label" style="margin-left:8px;">Manual Interventions</div>
-                <div id="manual-tasks-container">
-                    <div style="text-align:center; padding:60px; color:var(--text-muted)">
-                        <div style="font-size:32px; margin-bottom:12px;">📂</div>
-                        Extraction complete. No manual links found.
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:20px;">
+                        <div style="text-align:center; background:var(--bg); border: 1px solid var(--border); padding:16px; border-radius:20px;">
+                            <div id="st-total" style="font-size:24px; font-weight:900; color:var(--text-primary);">0</div>
+                            <div style="font-size:10px; font-weight:800; color:var(--text-muted);">JOBS</div>
+                        </div>
+                        <div style="text-align:center; background:var(--bg); border: 1px solid var(--border); padding:16px; border-radius:20px;">
+                            <div id="st-applied" style="font-size:24px; font-weight:900; color:var(--accent);">0</div>
+                            <div style="font-size:10px; font-weight:800; color:var(--text-muted);">PITCHES</div>
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div id="tab-tracker" class="tab-content">
-                <div class="section-label" style="margin-left:8px;">Application Journey</div>
-                <div id="applications-container">
-                    <p style="text-align:center; padding:40px; color:var(--text-muted)">Loading tracking database...</p>
+                <div class="bento-card">
+                    <p
+                        style="font-size:10px; font-weight:900; color:var(--text-muted); margin-bottom:16px; letter-spacing:0.1em; text-transform:uppercase;">
+                        YC Cold Research</p>
+                    <textarea id="yc-input"
+                        style="width:100%; height:160px; background:var(--bg); border:1px solid var(--border); border-radius:16px; padding:16px; font-size:13px; resize:none; outline:none; color:var(--text-primary);"
+                        placeholder="Paste YC Startup texts..."></textarea>
+                    <button class="btn-pill btn-primary" style="width:100%; margin-top:16px;" onclick="triggerYc()">🚀
+                        ANALYZE & DRAFT</button>
                 </div>
             </div>
-        </main>
-    </div>
 
-    <!-- Update Modal -->
-    <div id="modal-update" class="modal">
-        <div class="modal-card">
-            <div class="section-label">Update Application</div>
-            <input type="hidden" id="edit-app-id">
-            <div style="margin-bottom:20px;">
-                <label style="font-size:11px; color:var(--text-secondary); display:block; margin-bottom:8px;">Current
-                    Status</label>
-                <select id="edit-status"
-                    style="width:100%; padding:12px; background:var(--card); border:1px solid var(--border); border-radius:10px; color:#fff;">
-                    <option value="to_apply">To Apply (Link)</option>
-                    <option value="applied">Applied / Drafted</option>
-                    <option value="intro_call">Intro Call</option>
-                    <option value="technical_round">Technical Round</option>
-                    <option value="hr_round">HR / Final Round</option>
-                    <option value="offered">Job Offered</option>
-                    <option value="rejected">Rejected</option>
-                    <option value="no_response">No Response</option>
-                </select>
-            </div>
-            <div style="margin-bottom:24px;">
-                <label style="font-size:11px; color:var(--text-secondary); display:block; margin-bottom:8px;">Internal
-                    Notes</label>
-                <textarea id="edit-notes"
-                    style="width:100%; height:100px; padding:12px; background:var(--card); border:1px solid var(--border); border-radius:10px; color:#fff; font-family:inherit;"></textarea>
-            </div>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-                <button class="action-button" style="background:var(--card); color:#fff;"
-                    onclick="closeModal()">Cancel</button>
-                <button class="action-button" style="background:var(--accent-bright); color:#fff;"
-                    onclick="saveAppUpdate()">Save Changes</button>
+            <!-- MAIN BENTO FEED -->
+            <div class="main-column">
+                <div id="term-view" class="terminal-bento" style="display:none;">
+                    <p
+                        style="font-size:10px; font-weight:900; color:#666; margin-bottom:12px; text-transform:uppercase;">
+                        Live Pulse</p>
+                    <div id="terminal" class="terminal-screen">
+                        <b>[System]</b> Node initialized. Awaiting discovery instructions...
+                    </div>
+                </div>
+
+                <div class="tab-row">
+                    <div class="tab active" id="tab-tr-btn" onclick="showTab('tracker')">Application Flow</div>
+                    <div class="tab" id="tab-mn-btn" onclick="showTab('manual')">Direct Portals</div>
+                    <div class="tab" id="tab-yc-btn" onclick="showTab('yc')">YC Research Lab</div>
+                </div>
+
+                <div id="tab-tracker" class="tab-body">
+                    <div class="pill-row" id="tr-pills"></div>
+                    <div id="tr-list"></div>
+                </div>
+
+                <div id="tab-manual" class="tab-body" style="display:none;">
+                    <div class="pill-row" id="mn-pills"></div>
+                    <div id="mn-list"></div>
+                </div>
+
+                <div id="tab-yc" class="tab-body" style="display:none;">
+                    <div id="yc-list"></div>
+                </div>
             </div>
         </div>
     </div>
 
-    <div id="toast" class="toast">Action completed successfully</div>
+    <!-- MODAL -->
+    <div id="edit-modal" class="modal">
+        <div class="modal-card">
+            <h2 style="font-size:28px; font-weight:800; margin-bottom:30px;">Sync Data</h2>
+            <input type="hidden" id="edit-id">
+            <select id="edit-status" class="input-st" style="font-weight:700;">
+                <option value="to_apply">To Apply</option>
+                <option value="applied">Applied</option>
+                <option value="intro_call">Interview Scheduled</option>
+                <option value="offered">Offer Secured 🏆</option>
+                <option value="rejected">Rejected</option>
+            </select>
+            <textarea id="edit-notes" class="input-st" style="height:200px; resize:none;"
+                placeholder="Log interview notes..."></textarea>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                <button class="btn-action btn-sub" onclick="closeModal()">CANCEL</button>
+                <button class="btn-action btn-act-orange" onclick="saveRecord()">SYNC UPDATES</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast">Changes Applied.</div>
+
+    <div class="back-to-top" id="backToTop" onclick="window.scrollTo({top: 0, behavior: 'smooth'})">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"></path></svg>
+    </div>
 
     <script>
-        let pollInterval = null;
-        let lastLogIndex = 0;
-
-        function showToast(msg, type = 'success') {
-            const t = document.getElementById('toast');
-            t.textContent = msg;
-            t.className = 'toast show';
-            setTimeout(() => t.classList.remove('show'), 3000);
+        // THEME LOGIC
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute('data-theme');
+            const target = current === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', target);
+            localStorage.setItem('theme', target);
+            document.getElementById('theme-icon').textContent = target === 'dark' ? '☀️' : '🌙';
         }
 
-        async function triggerScript() {
-            const btn = document.getElementById('btn-trigger');
-            const btnYc = document.getElementById('btn-trigger-yc');
-            const stopBtn = document.getElementById('btn-stop');
-            btn.disabled = true;
-            btnYc.disabled = true;
-            btn.innerHTML = '✨ EXECUTING ENGINE...';
-            stopBtn.style.display = 'flex';
-            document.getElementById('terminal').innerHTML = '<b>[System]</b> Spawning worker process...\n';
+        // Init theme
+        const savedTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        window.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('theme-icon').textContent = savedTheme === 'dark' ? '☀️' : '🌙';
+        });
 
-            try {
-                const res = await fetch('/api/trigger', { method: 'POST' });
-                startPolling();
-            } catch (e) {
-                showToast('Failed to trigger process', 'danger');
-                btn.disabled = false;
-                btnYc.disabled = false;
-                stopBtn.style.display = 'none';
-            }
+        let lastS = 0, latestTS = 0, pollInterval = null;
+
+        function showToast(m) { const t = document.getElementById('toast'); t.textContent = m; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 2500); }
+        function closeModal() { document.getElementById('edit-modal').style.display = 'none'; }
+        function openEdit(id, st, nt) {
+            document.getElementById('edit-id').value = id;
+            document.getElementById('edit-status').value = st;
+            document.getElementById('edit-notes').value = nt;
+            document.getElementById('edit-modal').style.display = 'flex';
         }
 
-        async function triggerYCScript() {
-            const btnYc = document.getElementById('btn-trigger-yc');
-            const btn = document.getElementById('btn-trigger');
-            const stopBtn = document.getElementById('btn-stop');
-            const textInput = document.getElementById('yc-text-input').value;
-
-            if (!textInput.trim()) {
-                showToast('Please paste startup text first!', 'danger');
-                return;
-            }
-
-            btn.disabled = true;
-            btnYc.disabled = true;
-            btnYc.innerHTML = '🚀 CRAFTING PITCHES...';
-            stopBtn.style.display = 'flex';
-            document.getElementById('terminal').innerHTML = '<b>[System]</b> Spawning YC Outreach process...\n';
-
-            try {
-                const res = await fetch('/api/trigger-yc', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: textInput })
-                });
-                startPolling();
-                document.getElementById('yc-text-input').value = ''; // clear upon success
-            } catch (e) {
-                showToast('Failed to trigger YC process', 'danger');
-                btn.disabled = false;
-                btnYc.disabled = false;
-                btnYc.innerHTML = '🚀 DRAFT YC PITCHES';
-                stopBtn.style.display = 'none';
-            }
+        async function startDiscovery() {
+            document.getElementById('btn-trigger').disabled = true;
+            document.getElementById('btn-trigger').innerHTML = 'WAIT...';
+            document.getElementById('btn-stop').style.display = 'block';
+            document.getElementById('term-view').style.display = 'block';
+            await fetch('/api/trigger', { method: 'POST' });
+            pollLogs();
         }
 
-        async function stopScript() {
-            try {
-                await fetch('/api/stop', { method: 'POST' });
-                showToast('Stop signal sent', 'info');
-            } catch (e) {
-                showToast('Failed to stop process', 'danger');
-            }
+        async function triggerYc() {
+            const v = document.getElementById('yc-input').value; if (!v.trim()) return;
+            document.getElementById('term-view').style.display = 'block';
+            await fetch('/api/trigger-yc', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: v }) });
+            pollLogs();
         }
 
-        function startPolling() {
-            if (pollInterval) clearInterval(pollInterval);
-            pollInterval = setInterval(fetchUpdate, 1500);
-            fetchUpdate();
-        }
-
-        async function fetchUpdate() {
-            try {
-                const res = await fetch('/api/logs');
-                const data = await res.json();
-
-                // Update terminal
-                const term = document.getElementById('terminal');
-                if (data.logs) {
-                    const logsStr = data.logs;
-                    if (logsStr.length > lastLogIndex) {
-                        const newLogs = logsStr.substring(lastLogIndex).split('\n');
-                        newLogs.forEach(line => {
-                            if (!line) return;
-                            const formatted = line
-                                .replace(/\[PHASE (\d+)\]/g, '<b>[PHASE $1]</b>')
-                                .replace(/✅/g, '<i>✅</i>')
-                                .replace(/❌/g, '<span style="color:var(--danger)">❌</span>')
-                                .replace(/🚀/g, '<i>🚀</i>')
-                                .replace(/⚠️/g, '<span style="color:#f59e0b">⚠️</span>')
-                                .replace(/🔑/g, '<i>🔑</i>')
-                                .replace(/🔐/g, '<i>🔐</i>')
-                                .replace(/💡/g, '<span style="color:#2dd4bf">💡</span>');
-                            term.innerHTML += formatted + '<br>';
-                        });
-                        lastLogIndex = logsStr.length;
-                        term.scrollTop = term.scrollHeight;
-                    }
+        function pollLogs() {
+            if (pollInterval) return; // Prevent multiple intervals
+            pollInterval = setInterval(async () => {
+                const r = await fetch('/api/logs'); const d = await r.json();
+                const out = document.getElementById('terminal');
+                if (d.logs.length > lastS) {
+                    const ln = d.logs.substring(lastS).split('\n');
+                    ln.forEach(l => { if (!l) return; out.innerHTML += l.replace(/\[PHASE (\d+)\]/g, '<b>[PHASE $1]</b>') + '<br>'; });
+                    lastS = d.logs.length; out.scrollTop = out.scrollHeight;
                 }
-
-                if (!data.isRunning && !data.logs.includes('Exiting...')) {
-                    clearInterval(pollInterval);
+                if (!d.isRunning && d.logs.includes('Exiting')) {
                     document.getElementById('btn-trigger').disabled = false;
-                    document.getElementById('btn-trigger-yc').disabled = false;
-                    document.getElementById('btn-trigger').innerHTML = '✨ FETCH & AUTO-APPLY';
-                    document.getElementById('btn-trigger-yc').innerHTML = '🚀 DRAFT YC PITCHES';
+                    document.getElementById('btn-trigger').innerHTML = '✨ START AUTO-DISCOVERY';
                     document.getElementById('btn-stop').style.display = 'none';
-                    fetchApps();
-                    fetchManualJobs();
+                    syncData();
                 }
-
-                // Handle OTP/Password visibility
-                if (data.otpRequired) {
-                    document.getElementById('otp-box').style.display = 'block';
-                } else {
-                    document.getElementById('otp-box').style.display = 'none';
-                }
-
-                if (data.passwordRequired) {
-                    document.getElementById('password-box').style.display = 'block';
-                } else {
-                    document.getElementById('password-box').style.display = 'none';
-                }
-
-            } catch (e) { }
+                document.getElementById('otp-panel').style.display = d.otpRequired ? 'block' : 'none';
+            }, 1500);
         }
 
-        async function submitOtp() {
-            const code = document.getElementById('otp-input').value;
-            await fetch('/api/submit-otp', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ code })
+        function showTab(t) {
+            document.querySelectorAll('.tab-body').forEach(c => c.style.display = 'none');
+            document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+            document.getElementById('tab-' + t).style.display = 'block';
+            let btnId = '';
+            if (t === 'tracker') btnId = 'tr';
+            else if (t === 'manual') btnId = 'mn';
+            else if (t === 'yc') btnId = 'yc';
+            document.getElementById('tab-' + btnId + '-btn').classList.add('active');
+            syncData();
+        }
+
+        async function syncData() {
+            try {
+                const rA = await fetch('/api/applications'); const allApps = await rA.json();
+
+                const apps = allApps.filter(a => a.type !== 'yc' && a.status !== 'to_apply');
+                const ycApps = allApps.filter(a => a.type === 'yc');
+
+                const rM = await fetch('/api/manual-jobs'); const mans = await rM.json();
+
+                const combined = allApps;
+                if (combined.length > 0) latestTS = Math.max(...combined.map(x => new Date(x.appliedDate).getTime() || 0));
+
+                document.getElementById('st-total').textContent = apps.length;
+                document.getElementById('st-applied').textContent = apps.filter(x => x.status === 'applied').length;
+
+                draw('tr-list', 'tr-pills', apps);
+                draw('mn-list', 'mn-pills', mans);
+                draw('yc-list', null, ycApps);
+            } catch (e) {
+                console.error('❌ SyncData Error:', e);
+            }
+        }
+
+        function draw(listId, pillId, data) {
+            const list = document.getElementById(listId);
+            const pillRow = pillId ? document.getElementById(pillId) : null;
+            const grp = {};
+            
+            data.sort((a, b) => {
+                const timeA = new Date(a.appliedDate).getTime() || 0;
+                const timeB = new Date(b.appliedDate).getTime() || 0;
+                return timeB - timeA;
+            }).forEach(i => { 
+                const c = i.channel || "External Discovery"; 
+                if (!grp[c]) grp[c] = []; 
+                grp[c].push(i); 
             });
-            document.getElementById('otp-input').value = '';
-        }
 
-        async function submitPassword() {
-            const password = document.getElementById('password-input').value;
-            await fetch('/api/submit-password', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ password })
-            });
-            document.getElementById('password-input').value = '';
-        }
+            if (Object.keys(grp).length === 0) {
+                list.innerHTML = '<p style="text-align:center; padding:100px; color:var(--text-muted); font-weight:800;">No records found.</p>';
+                if (pillRow) pillRow.innerHTML = ''; return;
+            }
 
-        function switchTab(tab) {
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            document.querySelectorAll('.cyber-tab').forEach(t => t.classList.remove('active'));
-            document.getElementById('tab-' + tab).classList.add('active');
-            event.currentTarget.classList.add('active');
+            if (pillRow) {
+                const prefix = listId.split('-')[0]; // tr, mn
+                pillRow.innerHTML = '<div class="pill-label">Discover Sources:</div>' +
+                    Object.keys(grp).map(k => `<a href="#${prefix}-${k.replace(/\s+/g, '-')}" class="nav-pill">${k}</a>`).join('');
+            }
 
-            if (tab === 'tracker') fetchApps();
-            if (tab === 'manual') fetchManualJobs();
-        }
-
-        async function fetchApps() {
-            const res = await fetch('/api/applications');
-            const apps = await res.json();
-            document.getElementById('stat-total').textContent = apps.length;
-            document.getElementById('stat-applied').textContent = apps.filter(a => a.status === 'applied').length;
-
-            const container = document.getElementById('applications-container');
-            container.innerHTML = apps.reverse().map(app => {
-                const statusMap = {
-                    'to_apply': { cls: 'st-to_apply', label: 'Manual Link', step: 1 },
-                    'applied': { cls: 'st-applied', label: 'Drafted', step: 2 },
-                    'technical_round': { cls: 'st-technical_round', label: 'Technical', step: 3 },
-                    'offered': { cls: 'st-applied', label: 'Offered', step: 6 }
-                };
-                const s = statusMap[app.status] || { cls: '', label: app.status, step: 0 };
+            const prefix = listId.split('-')[0];
+            list.innerHTML = Object.entries(grp).map(([name, itms]) => `
+                <div class="chan-block reveal" id="${prefix}-${name.replace(/\s+/g, '-')}">
+                    <div class="chan-head">
+                        <div>
+                            <span style="font-size:10px; opacity:0.7; font-weight:800; display:block;">SOURCE CHANNEL</span>
+                            <h2>${name}</h2>
+                        </div>
+                        <span class="chan-meta">${itms.length} ACTIVE JOBS</span>
+                    </div>
+                    ${itms.map(item => {
+                const jobTime = new Date(item.appliedDate).getTime();
+                // "Latest" is expanded to 48 hours to catch any weekend/overnight batches
+                const isN = jobTime >= (latestTS - 48 * 60 * 60 * 1000);
+                const readableDate = new Date(item.appliedDate).toLocaleDateString('en-IN', {
+                    day: '2-digit', month: 'short', year: 'numeric'
+                });
+                const readableTime = new Date(item.appliedDate).toLocaleTimeString('en-IN', {
+                    hour: '2-digit', minute: '2-digit', hour12: true
+                });
 
                 return `
-                    <div class="tracker-item" onclick="openModal('${app.id}', '${app.status}', \`${app.notes || ''}\`)">
-                        <div class="tracker-icon" style="flex-shrink:0">🚀</div>
-                        <div class="tracker-info">
-                            <span class="chan-chip">${app.channel || 'COLD OUTREACH'}</span>
-                            <h3 style="color:#fff; margin-bottom:4px; font-size: 18px;">${app.company}</h3>
-                            <p style="color:var(--secondary); font-weight:600; margin-bottom:12px; font-size: 14px;">${app.role}</p>
-                            <div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 20px;">
-                                <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.6;">
-                                    ${app.description ? app.description.replace(/\n/g, '<br>') : 'No description provided.'}
-                                </p>
+                        <div class="job-card reveal" onclick="openEdit('${item.id}', '${item.status}', \`${(item.notes || '').replace(/`/g, '\\\\`')}\`)">
+                            ${isN ? '<div class="latest-ribbon">🔥 LATEST</div>' : ''}
+                            <div style="display:flex; justify-content:space-between; margin-bottom:16px; align-items: flex-start;">
+                                <div class="job-ico">${item.type === 'yc' ? '🍊' : '🚀'}</div>
+                                <div style="text-align:right;">
+                                    <div class="status-tag ${item.status === 'applied' ? 'tag-applied' : 'tag-todo'}">${item.status.replace('_', ' ')}</div>
+                                    <div style="font-size:11px; font-weight:700; color:var(--accent); margin-top:8px; font-family:var(--font-mono)">
+                                        POSTED: ${readableDate}
+                                    </div>
+                                    <div style="font-size:10px; color:var(--text-muted); font-weight:800;">
+                                        🕒 ${readableTime}
+                                    </div>
+                                </div>
                             </div>
-                            <div class="progress-line">
-                                <div class="p-dot ${s.step >= 1 ? 'done' : ''} ${s.step == 1 ? 'current' : ''}"></div>
-                                <div class="p-dot ${s.step >= 2 ? 'done' : ''} ${s.step == 2 ? 'current' : ''}"></div>
-                                <div class="p-dot ${s.step >= 3 ? 'done' : ''} ${s.step == 3 ? 'current' : ''}"></div>
-                                <div class="p-dot ${s.step >= 4 ? 'done' : ''} ${s.step == 4 ? 'current' : ''}"></div>
-                                <div class="p-dot ${s.step >= 5 ? 'done' : ''} ${s.step == 5 ? 'current' : ''}"></div>
-                                <div class="p-dot ${s.step >= 6 ? 'done' : ''} ${s.step == 6 ? 'current' : ''}"></div>
+                            <h3 class="job-title">${item.company}</h3>
+                            <p class="job-meta">${item.role} @ ${name}</p>
+                            <div class="job-desc">${(item.description || item.text || 'Discovering metadata...').replace(/\n/g, '<br>')}</div>
+                            
+                            <div style="margin-top:24px; display:flex; gap:12px; align-items:center;">
+                                ${item.link ? `<a href="${item.link}" target="_blank" onclick="event.stopPropagation()" class="btn-pill btn-orange" style="padding:10px 24px; font-size:12px;">APPLY ON PORTAL</a>` : ''}
+                                <span style="font-size:10px; font-weight:700; color:var(--text-muted); margin-left:auto;">ID: ${item.telegramId || 'AUTO'}</span>
                             </div>
                         </div>
-                        <div style="flex-shrink:0; display: flex; flex-direction: column; gap: 8px; align-items: flex-end;">
-                            <span class="status-badge ${s.cls}">${s.label}</span>
-                            ${app.link ? `<a href="${app.link}" target="_blank" class="action-button" style="padding: 8px 16px; font-size: 12px; width: auto;" onclick="event.stopPropagation()">🔗 LINK</a>` : ''}
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        async function fetchManualJobs() {
-            const res = await fetch('/api/manual-jobs');
-            const jobs = await res.json();
-            const container = document.getElementById('manual-tasks-container');
-            if (jobs.length === 0) {
-                container.innerHTML = '<div style="text-align:center; padding:60px; color:var(--text-muted)"><div style="font-size:32px; margin-bottom:12px;">📂</div>No manual links found in the current session.</div>';
-                return;
-            }
-
-            // Group by channel
-            const grouped = {};
-            jobs.forEach(j => {
-                const chan = j.channel || 'Telegram Group';
-                if (!grouped[chan]) grouped[chan] = [];
-                grouped[chan].push(j);
-            });
-
-            container.innerHTML = Object.entries(grouped).map(([channel, channelJobs]) => `
-                <div class="section-label" style="margin: 20px 0 10px 8px; color: var(--text-secondary)">${channel}</div>
-                ${channelJobs.map(j => `
-                    <div class="glass-card" style="padding: 24px; margin-bottom: 12px; position:relative; overflow:visible;">
-                        <h3 style="font-family:var(--font-heading); margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; font-size: 20px; color:#fff;">
-                            ${j.company || 'Action Required'}
-                            <span class="chan-chip" style="margin:0">${j.status === 'manual_review' ? 'Review Needed' : 'Form Link'}</span>
-                        </h3>
-                        <p style="font-size:14px; color:var(--text-secondary); margin-bottom:24px; line-height: 1.7; background: rgba(0,0,0,0.2); padding: 16px; border-radius: 12px; border: 1px solid var(--border);">
-                            ${(j.description || j.text || 'No description available').replace(/\n/g, '<br>')}
-                        </p>
-                        <div style="display:flex; gap:12px;">
-                            <a href="${j.link}" target="_blank" class="action-button" style="background:var(--accent-bright); color:#fff; text-decoration:none; flex:1; box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);" onclick="event.stopPropagation()">
-                                🔗 OPEN APPLICATION PORTAL
-                            </a>
-                            <button class="action-button" style="background:var(--card); color:#fff; width:auto; padding:0 16px;" onclick="event.stopPropagation(); switchTab('tracker'); setTimeout(() => openModal('${j.id}', '${j.status}', '${j.notes || ''}'), 100)">
-                                ⚙️
-                            </button>
-                        </div>
-                    </div>
-                `).join('')}
+                    `}).join('')}
+                </div>
             `).join('');
         }
 
-        function openModal(id, status, notes) {
-            document.getElementById('edit-app-id').value = id;
-            document.getElementById('edit-status').value = status;
-            document.getElementById('edit-notes').value = notes;
-            document.getElementById('modal-update').classList.add('active');
+        async function saveRecord() {
+            const id = document.getElementById('edit-id').value;
+            const st = document.getElementById('edit-status').value;
+            const nt = document.getElementById('edit-notes').value;
+            await fetch('/api/applications/' + id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: st, notes: nt }) });
+            showToast('Synchronized.'); closeModal(); syncData();
         }
 
-        function closeModal() {
-            document.getElementById('modal-update').classList.remove('active');
+        async function submitOtp() {
+            const v = document.getElementById('otp-input').value;
+            await fetch('/api/submit-otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: v }) });
+            showToast('Handshake Authenticated.'); document.getElementById('otp-input').value = '';
         }
 
-        async function saveAppUpdate() {
-            const id = document.getElementById('edit-app-id').value;
-            const status = document.getElementById('edit-status').value;
-            const notes = document.getElementById('edit-notes').value;
-
-            await fetch('/api/applications/' + id, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status, notes })
-            });
-            showToast('Application record updated');
-            closeModal();
-            fetchApps();
-        }
-
-        // Check health
         setInterval(async () => {
             try {
-                const url = `http://${window.location.hostname}:3001/api/form-filler/status`;
-                const res = await fetch(url);
-                const data = await res.json();
-                document.getElementById('ai-status').textContent = data.llm_available ? 'READY' : 'LLM ERROR';
-                document.getElementById('ai-status').style.color = data.llm_available ? 'var(--success)' : 'var(--danger)';
-            } catch (e) {
-                document.getElementById('ai-status').textContent = 'OFFLINE';
-                document.getElementById('ai-status').style.color = 'var(--text-muted)';
-            }
+                const host = window.location.hostname;
+                const r = await fetch(`http://${host}:3001/api/form-filler/status`); const d = await r.json();
+                const dot = document.getElementById('ai-dot');
+                const col = d.llm_available ? 'rgba(0, 255, 127, 1)' : 'rgba(255, 69, 0, 1)';
+                dot.style.background = col; dot.style.boxShadow = `0 0 10px ${col}`;
+                document.getElementById('ai-status').innerHTML = `<span style="width:12px; height:12px; border-radius:50%; background:${col}; display:inline-block; margin-right:10px; box-shadow:0 0 8px ${col};"></span> AI STATUS: ${d.llm_available ? 'OPERATIONAL' : 'OFFLINE'}`;
+            } catch (e) { }
         }, 5000);
 
-        document.addEventListener('mousemove', e => {
-            document.querySelectorAll('.glass-card, .tracker-item').forEach(card => {
-                const rect = card.getBoundingClientRect();
-                const x = ((e.clientX - rect.left) / rect.width) * 100;
-                const y = ((e.clientY - rect.top) / rect.height) * 100;
-                card.style.setProperty('--mouse-x', `${x}%`);
-                card.style.setProperty('--mouse-y', `${y}%`);
-            });
-        });
-
-        window.onload = () => {
-            fetchApps();
-            fetchManualJobs();
+        window.onscroll = () => {
+            const btt = document.getElementById('backToTop');
+            if (window.scrollY > 500) btt.classList.add('visible');
+            else btt.classList.remove('visible');
         };
+
+        syncData();
     </script>
 </body>
 
