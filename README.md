@@ -2,8 +2,6 @@
 
 <img width="1676" height="961" alt="Screenshot 2026-04-15 at 8 36 15 AM" src="https://github.com/user-attachments/assets/54cdd600-f352-4a56-8810-4b3d9c2f3efe" />
 
-
-
 A Model Context Protocol (MCP) server that provides full access to your personal Telegram account. This allows you to interact with your Telegram messages, chats, and contacts through MCP clients like Claude Desktop.
 
 ## Features
@@ -13,6 +11,10 @@ A Model Context Protocol (MCP) server that provides full access to your personal
 - **Chat Operations**: List, search, and get information about chats, groups, and channels
 - **User Information**: Get details about users and contacts
 - **Real-time Operations**: Mark messages as read and perform live actions
+
+<img width="369" height="549" alt="Screenshot 2026-04-15 at 8 40 52 AM" src="https://github.com/user-attachments/assets/6076d421-806e-491a-9f05-c23ec7305a01" /> | <img width="367" height="336" alt="Screenshot 2026-04-15 at 8 41 11 AM" src="https://github.com/user-attachments/assets/9bb43ad8-63ee-4650-8123-f099ad2f2f03" />
+
+
 
 ## Prerequisites
 
