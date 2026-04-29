@@ -722,6 +722,9 @@
 
                     <button id="btn-trigger" class="btn-pill btn-orange" style="width:100%" onclick="startDiscovery()">✨
                         START AUTO-DISCOVERY</button>
+                    <button id="btn-trigger-nas" class="btn-pill"
+                        style="width:100%; margin-top:12px; background:linear-gradient(135deg,#5b21b6,#7c3aed); color:#fff;"
+                        onclick="startNasDiscovery()">🌐 SYNC NAS COMMUNITY</button>
                     <button id="btn-stop" class="btn-pill btn-primary"
                         style="width:100%; margin-top:12px; display:none;" onclick="stopDiscovery()">🛑 STOP
                         PROCESS</button>
@@ -855,6 +858,24 @@
             pollLogs();
         }
 
+        async function startNasDiscovery() {
+            const btn = document.getElementById('btn-trigger-nas');
+            btn.disabled = true;
+            btn.innerHTML = 'WAIT...';
+            document.getElementById('btn-stop').style.display = 'block';
+            document.getElementById('term-view').style.display = 'block';
+            try {
+                await fetch('/api/trigger-nas', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({}),
+                });
+            } catch (e) {
+                showToast('Failed to start NAS scraper: ' + e.message);
+            }
+            pollLogs();
+        }
+
         async function stopDiscovery() {
             try {
                 const r = await fetch('/api/stop', { method: 'POST' });
@@ -933,6 +954,11 @@
                     pollInterval = null;
                     document.getElementById('btn-trigger').disabled = false;
                     document.getElementById('btn-trigger').innerHTML = '✨ START AUTO-DISCOVERY';
+                    const nasBtn = document.getElementById('btn-trigger-nas');
+                    if (nasBtn) {
+                        nasBtn.disabled = false;
+                        nasBtn.innerHTML = '🌐 SYNC NAS COMMUNITY';
+                    }
                     document.getElementById('btn-stop').style.display = 'none';
                     document.getElementById('btn-stop').disabled = false;
                     document.getElementById('btn-stop').innerHTML = '🛑 STOP PROCESS';
