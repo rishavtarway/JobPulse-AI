@@ -493,25 +493,69 @@ async function waitForLogin(page: Page, timeoutMs: number): Promise<boolean> {
   return false;
 }
 
-async function autoScrollFeed(page: Page, maxIterations = 30): Promise<void> {
+async function autoScrollFeed(
+  page: Page,
+  maxAgeHours: number,
+  maxIterations = 30,
+): Promise<void> {
+  // Stops on any of:
+  //   (a) we've seen a card whose age is > maxAgeHours (feed is newest-first,
+  //       so anything below would also be older — no point loading more).
+  //   (b) page height stabilises for 3 consecutive ticks.
+  //   (c) maxIterations reached.
   let lastHeight = 0;
   let stableTicks = 0;
   for (let i = 0; i < maxIterations; i++) {
-    const newHeight = await page.evaluate(() => {
+    const probe = await page.evaluate((maxAgeMs: number) => {
       const containers = Array.from(document.querySelectorAll<HTMLElement>('div')).filter(
         (el) => el.scrollHeight > el.clientHeight && el.clientHeight > 200,
       );
       window.scrollBy(0, window.innerHeight * 0.9);
       containers.forEach((c) => c.scrollBy(0, c.clientHeight * 0.9));
-      return Math.max(document.body.scrollHeight, ...containers.map((c) => c.scrollHeight));
-    });
+      const newHeight = Math.max(
+        document.body.scrollHeight,
+        ...containers.map((c) => c.scrollHeight),
+      );
+
+      // Look for a card whose relative-age label exceeds the window.
+      const RELATIVE = /\b(\d+)\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|wk|wks|week|weeks|mo|month|months|y|yr|yrs|year|years)\s+ago\b/i;
+      const labels = Array.from(document.querySelectorAll<HTMLElement>('span, time, div, p'))
+        .map((el) => (el.innerText || '').trim())
+        .filter((t) => t && t.length < 40 && RELATIVE.test(t));
+      let pastWindow = false;
+      for (const label of labels) {
+        const m = label.match(RELATIVE);
+        if (!m) continue;
+        const n = Number(m[1]);
+        const unit = m[2].toLowerCase();
+        let ms = 0;
+        if (/^s/.test(unit)) ms = n * 1000;
+        else if (/^m(ins?)?$/.test(unit) || unit === 'minute' || unit === 'minutes') ms = n * 60_000;
+        else if (/^h/.test(unit)) ms = n * 3_600_000;
+        else if (/^d/.test(unit)) ms = n * 86_400_000;
+        else if (/^w/.test(unit)) ms = n * 7 * 86_400_000;
+        else if (/^mo/.test(unit)) ms = n * 30 * 86_400_000;
+        else if (/^y/.test(unit)) ms = n * 365 * 86_400_000;
+        if (ms > maxAgeMs) {
+          pastWindow = true;
+          break;
+        }
+      }
+      return { newHeight, pastWindow };
+    }, maxAgeHours * 3_600_000);
+
+    if (probe.pastWindow) {
+      console.log(`   ⏹️  Reached posts older than ${maxAgeHours}h — stopping scroll.`);
+      break;
+    }
+
     await new Promise((r) => setTimeout(r, 1500));
-    if (newHeight <= lastHeight) {
+    if (probe.newHeight <= lastHeight) {
       stableTicks++;
       if (stableTicks >= 3) break;
     } else {
       stableTicks = 0;
-      lastHeight = newHeight;
+      lastHeight = probe.newHeight;
     }
   }
 }
@@ -533,15 +577,16 @@ async function collectFeedCards(page: Page): Promise<FeedCard[]> {
   return await page.evaluate(() => {
     const RELATIVE_TIME = /\b(just\s+now|\d+\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|wk|wks|week|weeks|mo|month|months|y|yr|yrs|year|years)\s+ago)\b/i;
 
-    function sha1(str: string): string {
-      // Tiny FNV-1a 32-bit hash as a sha1 stand-in (deterministic, no Node crypto in browser).
+    // Arrow expression (NOT a function declaration) so the tsx/esbuild loader
+    // doesn't wrap it in __name(...) when serialising for the browser context.
+    const sha1 = (str: string): string => {
       let h = 0x811c9dc5;
       for (let i = 0; i < str.length; i++) {
         h ^= str.charCodeAt(i);
         h = Math.imul(h, 0x01000193) >>> 0;
       }
       return h.toString(16);
-    }
+    };
 
     // 1. Find every text node containing a relative-time pattern.
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
@@ -830,7 +875,7 @@ async function main() {
     await ensureCommunityTab(page);
 
     console.log('📜 Auto-scrolling feed to load posts…');
-    await autoScrollFeed(page);
+    await autoScrollFeed(page, opts.maxAgeHours);
 
     const allCards = await collectFeedCards(page);
     console.log(`📝 Discovered ${allCards.length} feed card(s).`);
