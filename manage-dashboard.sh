@@ -1,7 +1,12 @@
 #!/bin/bash
 
+# Ensure Homebrew binaries are in PATH so nohup can find them
+export PATH=/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:$PATH
+
 # Configuration
 PORT=3000
+NPX=/opt/homebrew/bin/npx
+NPM=/opt/homebrew/bin/npm
 SERVER_PID_FILE=".server.pid"
 TUNNEL_PID_FILE=".tunnel.pid"
 TUNNEL_LOG="tunnel.log"
@@ -12,7 +17,7 @@ start() {
         echo "✅ Dashboard is already running (PID: $(cat "$SERVER_PID_FILE"))."
     else
         echo "🚀 Starting Dashboard server..."
-        nohup npm run dashboard > dashboard.log 2>&1 &
+        nohup $NPM run dashboard > dashboard.log 2>&1 &
         echo $! > "$SERVER_PID_FILE"
         sleep 3
         echo "✅ Dashboard started."
@@ -22,20 +27,18 @@ start() {
     if [ -f "$TUNNEL_PID_FILE" ] && kill -0 $(cat "$TUNNEL_PID_FILE") 2>/dev/null; then
         echo "✅ Tunnel is already running."
     else
-        echo "🌐 Starting stable tunnel (localhost.run)..."
+        echo "🌐 Starting stable tunnel (Cloudflare)..."
         # Always use a fresh log for the tunnel to catch the URL
         > "$TUNNEL_LOG"
-        nohup ssh -o StrictHostKeyChecking=no -R 80:localhost:$PORT nokey@localhost.run > "$TUNNEL_LOG" 2>&1 &
+        # Cloudflare tunnel is highly stable and does not suffer from loca.lt 503 errors
+        nohup $NPX -y cloudflared tunnel --url http://localhost:$PORT > "$TUNNEL_LOG" 2>&1 &
         echo $! > "$TUNNEL_PID_FILE"
         sleep 5
     fi
 
     echo "------------------------------------------------------"
-    URL=$(grep -o 'https://[0-9a-z-]\+\.lhr\.life' "$TUNNEL_LOG" | head -n 1)
-    if [ -z "$URL" ]; then
-        # Fallback for different localhost.run domains
-        URL=$(grep -o 'https://[0-9a-z-]\+\.localhost\.run' "$TUNNEL_LOG" | head -n 1)
-    fi
+    # Parse Cloudflare trycloudflare URL
+    URL=$(grep -o 'https://[0-9a-z-]\+\.trycloudflare\.com' "$TUNNEL_LOG" | head -n 1)
     
     if [ -n "$URL" ]; then
         echo "🌍 Dashboard is PUBLICLY available at: $URL"
@@ -76,10 +79,9 @@ status() {
 
     if [ -f "$TUNNEL_PID_FILE" ] && kill -0 $(cat "$TUNNEL_PID_FILE") 2>/dev/null; then
         echo "✅ Tunnel: RUNNING"
-        URL=$(grep -o 'https://[0-9a-z-]\+\.lhr\.life' "$TUNNEL_LOG" | head -n 1)
-        if [ -z "$URL" ]; then
-            URL=$(grep -o 'https://[0-9a-z-]\+\.localhost\.run' "$TUNNEL_LOG" | head -n 1)
-        fi
+        # Support Cloudflare URLs
+        URL=$(grep -o 'https://[0-9a-z-]\+\.trycloudflare\.com' "$TUNNEL_LOG" | head -n 1)
+        
         if [ -n "$URL" ]; then
             echo "🔗 Public URL: $URL"
         fi

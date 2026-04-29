@@ -1,0 +1,14 @@
+2026/04/24-08:00:33.832 6dc4fe Reusing MANIFEST /Users/tarway/Documents/JobPulse-AI/nas_chrome_profile/Default/IndexedDB/https_nas.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/04/24-08:00:33.832 6dc4fe Recovering log #31
+2026/04/24-08:00:33.832 6dc4fe Reusing old log /Users/tarway/Documents/JobPulse-AI/nas_chrome_profile/Default/IndexedDB/https_nas.com_0.indexeddb.leveldb/000031.log 
+2026/04/24-08:00:33.833 6dc4fe Delete type=2 #29
+2026/04/24-08:00:33.852 6dc511 Level-0 table #36: started
+2026/04/24-08:00:33.853 6dc511 Level-0 table #36: 633 bytes OK
+2026/04/24-08:00:33.854 6dc511 Delete type=0 #31
+2026/04/24-08:00:33.854 6dc4fe Manual compaction at level-0 from '\x00\x0d\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x0e\x00\x00\x00' @ 0 : 0; will stop at '\x00\x0d\x00\x00\x05' @ 289 : 1
+2026/04/24-08:00:33.854 6dc4fe Compacting 1@0 + 1@1 files
+2026/04/24-08:00:33.855 6dc4fe Generated table #37@0: 52 keys, 1335 bytes
+2026/04/24-08:00:33.855 6dc4fe Compacted 1@0 + 1@1 files => 1335 bytes
+2026/04/24-08:00:33.856 6dc4fe compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/04/24-08:00:33.857 6dc4fe Delete type=2 #36
+2026/04/24-08:00:33.857 6dc4fe Manual compaction at level-0 from '\x00\x0d\x00\x00\x05' @ 289 : 1 .. '\x00\x0e\x00\x00\x00' @ 0 : 0; will stop at (end)

@@ -1,4 +1,5 @@
 #!/bin/bash
+export PATH=$PATH:/usr/local/bin:/opt/homebrew/bin
 # Kill any existing server processes
 pkill -f "tsx server.ts" || true
 pkill -f "tsx combined_server.ts" || true

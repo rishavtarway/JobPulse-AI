@@ -1,108 +1,88 @@
-import * as fs from 'fs';
-import * as path from 'path';
 import { google } from 'googleapis';
+import fs from 'fs';
+import path from 'path';
+import readline from 'readline';
 import nodemailer from 'nodemailer';
-import dns from 'node:dns';
+import { TelegramClient } from './src/telegram/client.js';
+import { Config } from './src/config/index.js';
+import dotenv from 'dotenv';
 
-// Force IPv4-first DNS resolution to fix ENOTFOUND issues in Node.js 17+
-if (typeof dns.setDefaultResultOrder === 'function') {
-  dns.setDefaultResultOrder('ipv4first');
-}
-import { callAI } from './src/utils/ai_service.js';
+dotenv.config();
 
-// Detect if we are running inside the web server (BROWSER_MODE)
-const BROWSER_MODE = process.env.BROWSER_MODE === '1';
+const STATE_FILE = path.join(process.cwd(), 'auto_apply_state.json');
+const APPLICATIONS_FILE = path.join(process.cwd(), 'applications.json');
+const TRACKER_FILE = path.join(process.cwd(), 'applications.md');
+const CONFIG_FILE = path.join(process.cwd(), 'config.json');
+const MASTER_LOG_FILE = path.join(process.cwd(), 'discovery_history.log');
 const SERVER_PORT = process.env.SERVER_PORT || '3000';
-
-// When in BROWSER_MODE, request OTP from the web server instead of stdin
-async function requestOtpFromServer(): Promise<string> {
-  console.log('⚠️  Requesting OTP from web dashboard...');
-  try {
-    const resp = await fetch(`http://127.0.0.1:${SERVER_PORT}/api/internal/request-otp`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-      // Long timeout to wait for user input
-      signal: AbortSignal.timeout(130_000)
-    });
-    const data = await resp.json() as { code: string };
-    console.log('✅ OTP received from dashboard.');
-    return data.code || '';
-  } catch (e: any) {
-    console.error('❌ Failed to get OTP from server:', e.message);
-    return '';
-  }
-}
-
-async function requestPasswordFromServer(): Promise<string> {
-  console.log('🔐 Requesting 2FA password from web dashboard...');
-  try {
-    const resp = await fetch(`http://127.0.0.1:${SERVER_PORT}/api/internal/request-password`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-      signal: AbortSignal.timeout(130_000)
-    });
-    const data = await resp.json() as { password: string };
-    console.log('✅ Password received from dashboard.');
-    return data.password || '';
-  } catch (e: any) {
-    console.error('❌ Failed to get password from server:', e.message);
-    return '';
-  }
-}
-
-// ============================================================================
-// 1. ENVIRONMENT AND CONFIGURATION SETUP
-// ============================================================================
-const loadEnv = () => {
-  try {
-    const envPath = path.resolve(process.cwd(), '.env');
-    if (fs.existsSync(envPath)) {
-      const envFile = fs.readFileSync(envPath, 'utf-8');
-      envFile.split('\n').forEach(line => {
-        const match = line.match(/^([^#=]+)=(.*)$/);
-        if (match) {
-          process.env[match[1].trim()] = match[2].trim().replace(/^["']|["']$/g, '');
-        }
-      });
-      console.log("✅ Environment loaded manually.");
-    }
-  } catch (error) {
-    console.error("⚠️ Error reading .env:", error);
-  }
-};
-
-loadEnv();
-
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY;
-if (!OPENROUTER_API_KEY && !NVIDIA_API_KEY) {
-  console.error("❌ Missing AI API keys in .env. Cannot generate emails.");
-  process.exit(1);
-}
-
-const STATE_FILE = 'auto_apply_state.json';
-const NEW_JOBS_FILE = 'latest_jobs_to_apply.json';
-const MASTER_LOG_FILE = 'all_extracted_jobs_log.txt';
-
+const BROWSER_MODE = process.env.BROWSER_MODE === '1';
 const TARGET_CHANNELS = [
-  { id: "-1003338916645", name: "TechUprise Premium" },
-  { id: "-1001511880571", name: "Kushal Vijay Discussion" },
-  { id: "-1001419646388", name: "Arsh Goyal" },
-  { id: "-1002072564530", name: "BNY/Code Divas Exam" },
-  { id: "-1001603220106", name: "Fresher Offcampus Drives" },
-  { id: "-1002146855759", name: "Cognizant Discussion" },
-  { id: "-1001379678738", name: "Kushal Vijay YouTube" },
-  { id: "-1001515619731", name: "Krishan Kumar Jobs" },
-  { id: "-1002117864663", name: "The Latest Jobs 2026" },
-  { id: "-1002322597297", name: "Talentd Job Notifications" },
-  { id: "-1001918258764", name: "TechUprise Exclusive" },
-  { id: "-1001204676886", name: "OffCampus Internship" },
-  { id: "-1001409153549", name: "Daily Jobs Updates" }
+  { id: "-1003338916645", name: "TechUprise Premium" }
 ];
 
-// Attachments required for every email
+let globalClient: TelegramClient | null = null;
+
+// ============================================================================
+// 1. HELPERS
+// ============================================================================
+
+function safeSlice(text: string, length: number): string {
+  if (!text) return "";
+  // String.substring/slice can break emoji surrogate pairs. 
+  // Array.from(text) handles Unicode characters correctly.
+  const chars = Array.from(text);
+  if (chars.length <= length) return text;
+  return chars.slice(0, length).join('');
+}
+
+function isAlreadyApplied(msgId: string, channelName: string): boolean {
+  if (!fs.existsSync(APPLICATIONS_FILE)) return false;
+  const apps = JSON.parse(fs.readFileSync(APPLICATIONS_FILE, 'utf8'));
+  return apps.some((app: any) => app.telegramId === msgId && app.channel === channelName);
+}
+
+function requestOtpFromServer(): Promise<string> {
+  return new Promise(async (resolve) => {
+    console.log("📡 Discovery Agent: Waiting for OTP from dashboard...");
+    const checkOtp = async () => {
+      try {
+        const res = await fetch(`http://127.0.0.1:${SERVER_PORT}/api/telegram-otp`);
+        const data: any = await res.json();
+        if (data.otp) {
+          console.log("✅ OTP received!");
+          resolve(data.otp);
+        } else {
+          setTimeout(checkOtp, 2000);
+        }
+      } catch (e) {
+        setTimeout(checkOtp, 2000);
+      }
+    };
+    checkOtp();
+  });
+}
+
+function requestPasswordFromServer(): Promise<string> {
+  return new Promise(async (resolve) => {
+    console.log("📡 Discovery Agent: Waiting for 2FA password from dashboard...");
+    const checkPass = async () => {
+      try {
+        const res = await fetch(`http://127.0.0.1:${SERVER_PORT}/api/telegram-password`);
+        const data: any = await res.json();
+        if (data.password) {
+          console.log("✅ Password received!");
+          resolve(data.password);
+        } else {
+          setTimeout(checkPass, 2000);
+        }
+      } catch (e) {
+        setTimeout(checkPass, 2000);
+      }
+    };
+    checkPass();
+  });
+}
+
 const ATTACHMENTS = [
   { filename: 'RishavTarway-Resume.pdf', path: path.join(process.cwd(), 'RishavTarway-Resume.pdf') },
   { filename: 'OpenSourceContributions.pdf', path: path.join(process.cwd(), 'OpenSourceContributions.pdf') },
@@ -112,131 +92,59 @@ const ATTACHMENTS = [
 
 const SIGNATURE_HTML = `
 <br><br>
-Regards,<br>
-<strong>Rishav Tarway</strong><br>
-<a href="https://drive.google.com/file/d/18y1yNOP-C7Mw8_Japfeb9ihsfNk6YiwH/view?usp=sharing">Resume (Drive)</a> | <a href="https://wiggly-cyclone-4b3.notion.site/Open-Source-Contributions-196c5ae56b3480ffa68cce470f9fd6cc">Open Source Contributions</a><br>
+Best, Rishav Tarway | Mobile: +91 7004544142<br>
+<a href="https://drive.google.com/file/d/1q4jKjMioZf2FoY_IhuFYvlxjg_2WBRZ7/view?usp=sharing">Resume (Drive)</a> | <a href="https://wiggly-cyclone-4b3.notion.site/Open-Source-Contributions-196c5ae56b3480ffa68cce470f9fd6cc">Open Source Contributions</a><br>
 <a href="https://www.linkedin.com/in/rishav-tarway-fst/">LinkedIn</a> | <a href="https://my-portfolio-five-roan-36.vercel.app/">Portfolio</a> | <a href="https://github.com/rishavtarway">GitHub</a>
 `;
 
+// Removed HARDCODED_SCAN_FROM to allow pure automated resumption from state file.
+
 // ============================================================================
-// 2. GMAIL API AUTHENTICATION
+// 2. GMAIL API AUTHENTICATION & HELPERS
 // ============================================================================
 async function authorizeGmail() {
   const CREDENTIALS_PATH = path.join(process.cwd(), 'credential.json');
   const TOKEN_PATH = path.join(process.cwd(), 'token.json');
 
-  console.log(`   📂 Loading credentials from: ${CREDENTIALS_PATH}`);
   if (!fs.existsSync(CREDENTIALS_PATH)) throw new Error("Missing credential.json");
-  
-  console.log(`   📂 Loading token from: ${TOKEN_PATH}`);
-  if (!fs.existsSync(TOKEN_PATH)) throw new Error("Missing token.json");
+  const credentials = JSON.parse(fs.readFileSync(CREDENTIALS_PATH, 'utf8'));
+  const { client_secret, client_id, redirect_uris } = credentials.installed || credentials.web;
+  const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, redirect_uris[0]);
 
-  const content = fs.readFileSync(CREDENTIALS_PATH, 'utf8');
-  const credentials = JSON.parse(content);
-  const clientSecret = credentials.installed?.client_secret || credentials.web?.client_secret;
-  const clientId = credentials.installed?.client_id || credentials.web?.client_id;
-  const redirectUris = credentials.installed?.redirect_uris || credentials.web?.redirect_uris || ['http://localhost'];
-
-  const oAuth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUris[0]);
-  const token = JSON.parse(fs.readFileSync(TOKEN_PATH, 'utf8'));
-  
-  console.log(`   🔑 Token scope: ${token.scope}`);
-  console.log(`   📅 Token expiry: ${new Date(token.expiry_date).toLocaleString()}`);
-  
-  oAuth2Client.setCredentials(token);
-
-  // Pre-flight check: Use a more robust check that works with compose scope
-  try {
-    console.log("   🧪 Running Gmail pre-flight check...");
-    const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
-    // getProfile might fail if scope is ONLY compose, but let's try it and catch
-    await gmail.users.getProfile({ userId: 'me' });
-    console.log("   ✅ Gmail pre-flight check passed.");
-  } catch (err: any) {
-    console.warn(`   ⚠️ Pre-flight warning: ${err.message}`);
-    if (err.message?.includes('invalid_grant')) {
-      throw new Error("Gmail token expired/revoked. Please run 'npx tsx auth_gmail.ts' to re-authorize.");
-    }
-    // If it's a 403 Insufficient Permission, we might still be able to create drafts
-    if (err.code === 403) {
-      console.log("   ℹ️ Insufficient permission for getProfile, but proceeding with compose scope...");
-    } else {
-       throw err;
-    }
+  if (fs.existsSync(TOKEN_PATH)) {
+    oAuth2Client.setCredentials(JSON.parse(fs.readFileSync(TOKEN_PATH, 'utf8')));
+  } else {
+    // Falls back to manual terminal auth if token missing
+    const authUrl = oAuth2Client.generateAuthUrl({ access_type: 'offline', scope: ['https://www.googleapis.com/auth/gmail.compose', 'https://www.googleapis.com/auth/gmail.readonly'] });
+    console.log('Authorize this app by visiting this url:', authUrl);
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const code = await new Promise<string>((resolve) => rl.question('Enter the code from that page here: ', (code) => { resolve(code); rl.close(); }));
+    const { tokens } = await oAuth2Client.getToken(code);
+    oAuth2Client.setCredentials(tokens);
+    fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens));
   }
-
   return oAuth2Client;
 }
 
-// ============================================================================
-// 3. TELEGRAM EXTRACTION LOGIC
-// ============================================================================
-// ============================================================================
-// AI JOB FILTERING LOGIC
-// ============================================================================
-async function isRealJobPosting(text: string): Promise<boolean> {
-  // Fast heuristic - if it has an email, it's likely a job or contact info
-  if (text.includes('@') && (text.toLowerCase().includes('hiring') || text.toLowerCase().includes('job') || text.toLowerCase().includes('internship'))) return true;
-
-  // Otherwise, ask AI to filter out clutter
-  const prompt = `Critically evaluate if this text is a real engineering job / internship posting or a link to a job application form.
-    Message: "${text.substring(0, 1000)}"
-Reply ONLY with "YES" if it's a job/internship posting or application form link. 
-Reply ONLY with "NO" if it's general chat, career guidance, spam, or a generic question.`;
-
-  const reply = await callAI(prompt);
-  return reply?.toUpperCase().includes("YES") || false;
-}
-
-async function extractCompanyName(text: string, email?: string): Promise<string> {
-  const genericDomains = ['gmail.com', 'outlook.com', 'yahoo.com', 'hotmail.com', 'icloud.com', 'protonmail.com', 'me.com'];
-
-  if (email) {
-    const domain = email.split('@')[1]?.toLowerCase();
-    if (domain && !genericDomains.includes(domain)) {
-      const name = domain.split('.')[0];
-      return name.charAt(0).toUpperCase() + name.slice(1);
-    }
-  }
-
-  const prompt = `Extract the official company name from this job posting.
-Message: "${text.substring(0, 1000)}"
-Reply ONLY with the company name. If no specific company name is found, reply ONLY with "Hiring Team".`;
-
-  const name = await callAI(prompt);
-  return name?.trim().substring(0, 50) || "Hiring Team";
-}
-
-const APPS_FILE = 'applications.json';
-
-function isAlreadyApplied(telegramId: string, channel: string): boolean {
+async function checkIfSentInGmail(gmail: any, toEmail: string): Promise<boolean> {
   try {
-    if (fs.existsSync(APPS_FILE)) {
-      const apps = JSON.parse(fs.readFileSync(APPS_FILE, 'utf8'));
-      return apps.some((app: any) => app.telegramId === telegramId && app.channel === channel);
-    }
-  } catch (e) {
-    console.error("Error checking applications.json:", e);
+    const res = await gmail.users.messages.list({
+      userId: 'me',
+      q: `to:${toEmail} label:SENT`,
+      maxResults: 1
+    });
+    return (res.data.messages && res.data.messages.length > 0);
+  } catch (e: any) {
+    console.log(`   ⚠️ Gmail Search failed for ${toEmail}: ${e.message}`);
+    return false;
   }
-  return false;
 }
 
-async function extractNewJobs() {
-  let state: any = { channelLastIds: {} };
-  if (fs.existsSync(STATE_FILE)) {
-    state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
-    if (!state.channelLastIds) state.channelLastIds = {};
-  }
+async function extractNewJobs(client: TelegramClient) {
+  let state = { channelLastIds: {} as Record<string, number> };
+  if (fs.existsSync(STATE_FILE)) state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
 
   console.log(`\n🚀 [PHASE 1] Extracting new jobs from ${TARGET_CHANNELS.length} channels...`);
-
-  // Dynamic Imports for Telegram
-  const { TelegramClient } = await import('./src/telegram/client.js');
-  const { Config } = await import('./src/config/index.js');
-
-  const config = Config.getInstance();
-  const client = new TelegramClient(config.telegram);
-
   await client.connect(BROWSER_MODE ? {
     getAuthCode: requestOtpFromServer,
     getPassword: requestPasswordFromServer,
@@ -246,18 +154,22 @@ async function extractNewJobs() {
   let allManualJobs: any[] = [];
   let masterLogAppends = `\n\n--- MULTI-CHANNEL AUTO EXTRACT: ${new Date().toISOString()} ---\n\n`;
 
+  // Generic floor: 21 days ago (extended to catch missed jobs)
+  const MIN_POSTED_DATE = Date.now() - (21 * 24 * 60 * 60 * 1000); 
+
+  // Hydrate the brand new TDLib session with the master chat list so the cache recognizes our hardcoded ID
+  try {
+    console.log('   🔄 Pre-fetching chat list to hydrate fresh session cache...');
+    await client.getChats(100);
+  } catch (e: any) {
+    console.log('   [Warning] Fast chat hydration hit a snag, proceeding anyway: ' + e.message);
+  }
+
   for (const targetChannel of TARGET_CHANNELS) {
     console.log(`\n📡 Scanning Channel: ${targetChannel.name} (${targetChannel.id})...`);
-
-    // fallback ID 2600000000 is roughly from last few days
-    let lastProcessedId = state.channelLastIds[targetChannel.id] || 2600000000;
-
-    // Force TDLib to sync the chat
-    try {
-      // @ts-ignore
-      await client.client.invoke({ _: 'openChat', chat_id: parseInt(targetChannel.id) });
-      await new Promise(r => setTimeout(r, 1000));
-    } catch (e) { }
+    
+    let lastProcessedId = state.channelLastIds[targetChannel.id] || 0;
+    console.log(`   Last Processed ID: ${lastProcessedId}`);
 
     let newMessages: any[] = [];
     let lastFetchedId = 0;
@@ -265,108 +177,151 @@ async function extractNewJobs() {
     let batchCounter = 0;
     const seenIds = new Set<number>();
 
-    while (keepFetching && batchCounter < 20) { // Increased batch counter for deeper search
-      const batch = await client.getMessages(targetChannel.id, 50, lastFetchedId);
-      if (!batch || batch.length === 0) break;
+    try {
+      // Force TDLib to fully open the channel, which forces native synchronization of new messages over the wire
+      await (client as any).client.invoke({ _: 'openChat', chat_id: parseInt(targetChannel.id) });
+      await (client as any).client.invoke({ _: 'getChat', chat_id: parseInt(targetChannel.id) });
+      process.stdout.write(`   ⏳ Synchronizing with Telegram (warmup)...`);
+      await new Promise(r => setTimeout(r, 5000));
+      process.stdout.write(` Done.\n`);
+    } catch (e: any) {
+      console.log(`   [TDLib Sync] Warning: ${e.message}`);
+    }
 
-      for (const m of batch) {
-        const isNew = m.id > lastProcessedId;
-        const alreadyApplied = isAlreadyApplied(m.id.toString(), targetChannel.name);
+    let retryCount = 0;
+    while (retryCount < 2) {
+      try {
+        lastFetchedId = 0;
+        newMessages = [];
+        seenIds.clear();
+        keepFetching = true;
+        batchCounter = 0;
 
-        if (!seenIds.has(m.id) && !alreadyApplied) {
-          // We take it if it's strictly newer OR if we missed it somehow but it's not in DB
-          newMessages.push(m);
-          seenIds.add(m.id);
+        while (keepFetching && batchCounter < 50) {
+          const batch = await client.getMessages(targetChannel.id, 50, lastFetchedId);
+          if (!batch || batch.length === 0) break;
+
+          for (const m of batch) {
+            if (!seenIds.has(m.id)) {
+              newMessages.push(m);
+              seenIds.add(m.id);
+            }
+          }
+          const oldestInBatch = batch[batch.length - 1];
+          const oldestDate = oldestInBatch.date * 1000;
+          if (oldestDate < MIN_POSTED_DATE) {
+            keepFetching = false;
+          }
+          lastFetchedId = oldestInBatch.id;
+          batchCounter++;
+          process.stdout.write(`   Scanning batch... (Oldest: ${oldestInBatch.id}, Found: ${newMessages.length})\r`);
         }
-      }
 
-      const oldestInBatch = batch[batch.length - 1];
-      // Logic: keep fetching until we hit 1000 messages or we are deep past the lastProcessedId
-      if (lastFetchedId === oldestInBatch.id || (oldestInBatch.id < (lastProcessedId - 1000))) {
-        keepFetching = false;
+        // Proceed to analyze if we found ANY messages, regardless of ID, 
+        // to catch skipped ones in the 48h window.
+        if (newMessages.length > 0) {
+          break; 
+        } else {
+          retryCount++;
+          if (retryCount < 2) {
+            console.log(`\n   🕒 No messages found, waiting and retrying (${retryCount}/1)...`);
+            await new Promise(r => setTimeout(r, 4000));
+          }
+        }
+      } catch (e: any) {
+        console.log(`\n⚠️ Error fetching messages for ${targetChannel.name}: ${e.message}`);
+        break;
       }
-      lastFetchedId = oldestInBatch.id;
-      batchCounter++;
-      process.stdout.write(`   Scanning batch... (Oldest: ${oldestInBatch.id}, Found: ${newMessages.length})\r`);
     }
 
-    if (newMessages.length === 0) {
-      console.log(`\n   ✅ Checked status of ${targetChannel.name}. No new actionable messages.`);
-      continue;
-    }
+    if (newMessages.length > 0) {
+      console.log(`\n   🔍 Analyzing ${newMessages.length} messages in ${targetChannel.name}...`);
+      
+      // Process oldest messages first to advance state safely
+      newMessages.sort((a, b) => a.id - b.id);
 
-    console.log(`\n   🔍 Analyzing ${newMessages.length} messages in ${targetChannel.name} with AI...`);
+      for (const m of newMessages) {
+        const text = m.text || m.mediaCaption || "";
+        if (!text.trim()) continue;
+        
+        const messageDate = m.date * 1000;
+        const isVeryRecent = (Date.now() - messageDate) < (24 * 60 * 60 * 1000); // 24h retry window
+        const postedISO = new Date(messageDate).toISOString();
 
-    for (const m of newMessages) {
-      const text = m.text || m.mediaCaption || "";
-      if (!text.trim()) continue;
+        // 1. Skip if older than MIN_POSTED_DATE (7 days)
+        if (messageDate < MIN_POSTED_DATE) {
+          continue;
+        }
 
-      // 1. Log every message for record
-      masterLogAppends += `[ID:${m.id}] [Chan:${targetChannel.name}] [Date:${new Date(m.date * 1000).toISOString()}] ${text.replace(/\n/g, ' ')}\n\n`;
+        // 2. Skip if already successfully applied (Database check)
+        if (isAlreadyApplied(m.id.toString(), targetChannel.name)) {
+          // Always advance state if we see a message we've already handled
+          if (m.id > state.channelLastIds[targetChannel.id]) state.channelLastIds[targetChannel.id] = m.id;
+          continue; 
+        }
 
-      // 2. Multi-level filtering
-      const emailMatch = text.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/i);
-      const linkMatch = text.match(/(https?:\/\/[^\s]+)/i);
+        // 3. Skip if already seen in past runs 
+        //   EXCEPTION: If message is recent (last 48h) but not in applications.json, 
+        //   allow re-processing to catch previously skipped/failed drafts.
+        const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
+        const isRecent = (Date.now() - messageDate) < FORTY_EIGHT_HOURS_MS;
 
-      if (emailMatch || linkMatch) {
+        if (m.id <= lastProcessedId && !isRecent) {
+          continue;
+        }
+
+        const emailMatch = text.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/i);
+        const linkMatch = text.match(/(https?:\/\/[^\s]+|[a-z0-9]+\.[a-z0-9]+\/[^\s]+|careers\.[a-z0-9]+\.[a-z]+|jobs\.[a-z0-9]+\.[a-z]+)/i);
+
+        if (!(emailMatch || linkMatch)) {
+          console.log(`   ⏭️ Skip ID: ${m.id} (Regex: No email or link)`);
+          continue;
+        }
+
         const isJob = await isRealJobPosting(text);
+        if (isJob === null) {
+          console.log(`   ⚠️ AI classification failed for ID: ${m.id}. Skipping remaining messages in this channel to avoid state corruption.`);
+          break;
+        }
         if (!isJob) continue;
+        
+        console.log(`   Processing job ID: ${m.id}, Posted: ${postedISO}`);
+        masterLogAppends += `[ID:${m.id}] [Chan:${targetChannel.name}] [Date:${postedISO}] ${text.replace(/\n/g, ' ')}\n\n`;
 
         const company = await extractCompanyName(text, emailMatch ? emailMatch[1] : undefined);
 
         if (emailMatch) {
-          allParsedJobs.push({
-            id: m.id.toString(),
-            channel: targetChannel.name,
-            date: new Date(m.date * 1000).toISOString(),
-            text: text,
-            email: emailMatch[1],
-            company: company,
-            link: linkMatch ? linkMatch[1] : null // STORE LINK IF PRESENT
-          });
+          allParsedJobs.push({ id: m.id.toString(), channel: targetChannel.name, date: postedISO, text: text, email: emailMatch[1], company: company, link: linkMatch ? linkMatch[1] : null });
+        }
+        if (linkMatch) {
+          allManualJobs.push({ id: m.id.toString(), channel: targetChannel.name, date: postedISO, text: text, link: linkMatch[1], company: company });
         }
 
-        // Always add to manual links if a link is present, even if email is there
-        if (linkMatch) {
-          allManualJobs.push({
-            id: m.id.toString(),
-            channel: targetChannel.name,
-            date: new Date(m.date * 1000).toISOString(),
-            text: text,
-            link: linkMatch[1],
-            company: company
-          });
+        // 4. Finally advance state only for handled messages
+        if (m.id > state.channelLastIds[targetChannel.id]) {
+          state.channelLastIds[targetChannel.id] = m.id;
+          fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
         }
+
+        // 5. Pacing to respect AI rate limits
+        await new Promise(r => setTimeout(r, 4000));
       }
     }
-
-    // Update state for this channel
-    const highestId = Math.max(...newMessages.map(m => m.id));
-    state.channelLastIds[targetChannel.id] = highestId;
   }
 
-  // Update master files
+  // Persist state immediately after discovery
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+  console.log("\n💾 [STATE] Progress saved to state file.");
+
   fs.appendFileSync(MASTER_LOG_FILE, masterLogAppends);
 
-  // Handle Manual Jobs Log
   if (allManualJobs.length > 0) {
     let mdContent = `\n\n## Multi-Channel Manual Applications (${new Date().toISOString()})\n\n`;
-    allManualJobs.forEach(job => {
-      mdContent += `### [${job.channel}] Job ID: ${job.id} (Posted: ${new Date(job.date).toLocaleString()})\n`;
-      mdContent += `**Apply Here:** [${job.link}](${job.link})\n\n`;
-      mdContent += `**Description:**\n> ${job.text.replace(/\n/g, '\n> ')}\n\n`;
-      mdContent += `---\n`;
-    });
-    fs.appendFileSync('MANUAL_APPLY_TASKS.md', mdContent);
-
-    // Log to Tracker
     for (const job of allManualJobs) {
+      mdContent += `### [${job.channel}] Job ID: ${job.id} (Posted: ${job.date})\n`;
+      mdContent += `**Apply Here:** [${job.link}](${job.link})\n\n**Description:**\n> ${job.text.replace(/\n/g, '\n> ')}\n\n---\n`;
       try {
-        const port = process.env.SERVER_PORT || '3000';
-        const company = await extractCompanyName(job.text);
-
-        await fetch(`http://127.0.0.1:${port}/api/applications`, {
+        await fetch(`http://127.0.0.1:${SERVER_PORT}/api/applications`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -376,254 +331,304 @@ async function extractNewJobs() {
             telegramId: job.id,
             link: job.link,
             description: job.text,
+            jobDescription: job.text,
             status: 'to_apply',
-            type: 'telegram'
+            type: 'telegram',
+            appliedDate: job.date,
+            _timestamp: new Date(job.date).getTime()
           })
         });
       } catch (e) { }
     }
+    fs.appendFileSync('MANUAL_APPLY_TASKS.md', mdContent);
   }
 
-  if (allParsedJobs.length === 0) {
-    console.log("No new jobs with emails found. Exiting Phase 1.");
-    return [];
-  }
-
-  console.log(`✅ Extracted ${allParsedJobs.length} NEW actionable job postings across all channels.`);
-  fs.writeFileSync(NEW_JOBS_FILE, JSON.stringify(allParsedJobs, null, 2));
   return allParsedJobs;
 }
 
 // ============================================================================
-// 4. OPENROUTER AI GENERATION LOGIC
+// AI LOGIC
 // ============================================================================
+async function isRealJobPosting(text: string): Promise<boolean | null> {
+  const reply = await callAI(`Is this a job/internship/career opening of ANY KIND (engineering, marketing, HR, operations, etc.)? Ignore generic news, ads for courses, or channel announcements. Reply ONLY YES or NO.\nText: "${safeSlice(text, 500)}"`);
+  if (reply === null) return null;
+  return reply.toUpperCase().includes("YES");
+}
+
+async function extractCompanyName(text: string, email?: string): Promise<string> {
+  const genericDomains = ['gmail.com', 'outlook.com', 'yahoo.com', 'hotmail.com'];
+  if (email) {
+    const domain = email.split('@')[1];
+    if (!genericDomains.includes(domain)) {
+      const parts = domain.split('.');
+      return parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
+    }
+  }
+  const reply = await callAI(`Extract only the company name from this job post. If not found, return 'Unknown'.\nText: "${safeSlice(text, 300)}"`);
+  return reply?.replace(/['"]/g, '').trim() || "Unknown";
+}
+
 function extractName(email: string, text: string): string {
-  const reachOutMatch = text.match(/reach out (?:to|at) ([A-Z][a-z]+)/);
-  if (reachOutMatch) return reachOutMatch[1];
-  const emailNameMatch = email.match(/^([a-z]+)/i);
-  if (emailNameMatch && !['hr', 'career', 'careers', 'job', 'jobs', 'info', 'hello', 'contact', 'admin', 'manager', 'projects', 'talent'].includes(emailNameMatch[1].toLowerCase())) {
-    return emailNameMatch[1].charAt(0).toUpperCase() + emailNameMatch[1].slice(1);
+  if (email.includes('.')) {
+    const namePart = email.split('@')[0];
+    if (namePart.includes('.')) return namePart.split('.')[0].charAt(0).toUpperCase() + namePart.split('.')[0].slice(1);
   }
   return "Team";
 }
 
-async function generateEmailContent(jobText: string, company: string, contactName: string): Promise<{ subject: string, body: string }> {
-  const greeting = contactName === "Team" ? `Hello ${company} Team,` : `Hello ${contactName},`;
+async function callAI(prompt: string, jsonFlag = false): Promise<any> {
+    const nvidiaKey = process.env.NVIDIA_API_KEY;
+    const openrouterKey = process.env.OPENROUTER_API_KEY;
+    
+    // Cycle through models to avoid rate limits
+    const models = [
+        { provider: 'openrouter', name: 'google/gemini-2.0-flash-lite-001' },
+        { provider: 'openrouter', name: 'google/gemini-2.0-pro-exp-02-05:free' },
+        { provider: 'openrouter', name: 'google/gemini-2.0-flash-thinking-exp:free' },
+        { provider: 'openrouter', name: 'meta-llama/llama-3.1-70b-instruct' },
+        { provider: 'nvidia', name: 'meta/llama-3.1-70b-instruct' },
+        { provider: 'nvidia', name: 'meta/llama-3.1-405b-instruct' }
+    ];
 
-  const prompt = `
-Generate a minimalist, human-like cold email for a job application.
-YOU ARE RISHAV TARWAY. Write strictly in the FIRST PERSON ("I").
-NEVER refer to yourself as "Rishav" or "Tarway" in the body.
+    for (const model of models) {
+        let retries = 0;
+        const maxRetries = 1;
 
-Applicant Details (USE THESE IN FIRST PERSON):
-- IIIT Bangalore: I worked with the MOSIP team (government identity systems) building high-scale BDD test suites and fixing critical sync bugs.
-- Classplus: I worked with the Classplus team to optimize backend architecture for 10k+ concurrent users.
-- Open Source: I merged PR #48 for OpenPrinting's fuzzing layer.
-- Top Skills: Java, Python, TypeScript, Node.js, Selenium, AWS, Redis.
+        while (retries <= maxRetries) {
+            try {
+                console.log(`🤖 [Querying ${model.provider}: ${model.name}]...`);
+                let response;
+                if (model.provider === 'nvidia') {
+                    response = await fetch(`https://integrate.api.nvidia.com/v1/chat/completions`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${nvidiaKey}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ model: model.name, messages: [{ role: "user", content: prompt }] })
+                    });
+                } else {
+                    response = await fetch(`https://openrouter.ai/api/v1/chat/completions`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${openrouterKey}`, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://github.com/rishavtarway/JobPulse-AI', 'X-Title': 'JobPulse AI' },
+                        body: JSON.stringify({ model: model.name, messages: [{ role: "user", content: prompt }] })
+                    });
+                }
 
-Job Description: "${jobText}"
-Target Company: ${company}
-Contact Name: ${contactName}
+                const data: any = await response.json();
+                
+                if (data.error) {
+                    const errMsg = typeof data.error.message === 'string' ? data.error.message : JSON.stringify(data.error);
+                    
+                    if (data.error.code === 429 || errMsg.includes('Rate limit') || data.status === 429) {
+                        console.log(`   ⚠️ Rate limited on ${model.provider}:${model.name}. Waiting 30s to retry... (Attempt ${retries + 1}/${maxRetries + 1})`);
+                        await new Promise(r => setTimeout(r, 30000));
+                        retries++;
+                        continue;
+                    }
+                    if (data.status === 401 || (data.error && data.error.code === 401) || errMsg.includes('User not found') || errMsg.includes('Invalid API Key')) {
+                        console.log(`   ❌ Auth Error on ${model.provider}:${model.name}. Skipping provider...`);
+                        break; // Exit retry loop and try next model
+                    }
+                    console.log(`   ⚠️ API error from ${model.name}: ${errMsg}`);
+                    break; // Try next model
+                }
+                
+                if (!data.choices || data.choices.length === 0) {
+                  console.log(`   ⚠️ Unexpected AI response format from ${model.name}`);
+                  break;
+                }
 
-STRICT RULES:
-1. Return JSON: {"subject": "...", "body": "..."}
-2. SUBJECT LINE: Catchy brackets [] or semicolons ; as per user style. 
-   Example: "[Inquiry] Engineering at ${company}".
-3. GREETING: Start with exactly one greeting: "Hi ${contactName}," or "Hello ${contactName},".
-4. BODY: NO BOLDING. NEVER use your own name in the sentences. 
-5. TONE: Human, conversational. No "I am writing...". Just start with the connection to ${company}.
-6. Content must be 3 short paragraphs in HTML <p> tags. Total under 130 words.
-7. THE ASK: End with: "Would you be open to a quick 14-minute coffee chat this week or next?"`;
-
-  console.log(`   🤖 Generating humanized pitch for ${company}...`);
-  const result = await callAI(prompt, true);
-
-  if (!result) {
-    return {
-      subject: `[Inquiry] Software Engineer role at ${company}`,
-      body: `<p>I came across the job opportunity for Software Engineer from your department and it immediately caught my eye as it matches my background in high-scale systems.</p><p>My background is in Node.js, TypeScript, and Java, which directly aligns with what you need. I've completed a research internship at IIIT Bangalore on government identity systems and optimized backend infrastructure at Classplus for 10k+ concurrent users. I'm also deeply involved in Open Source, recently merging PR #48 for OpenPrinting.</p><p>I would genuinely love to hear your perspective on what makes someone successful in this role. Would you be open to a quick 14-minute coffee chat this week or next?</p>${SIGNATURE_HTML}`
-    };
-  }
-
-  return { subject: result.subject, body: `${result.body}${SIGNATURE_HTML}` };
-}
-
-export async function generateYCPolishedEmail(company: string, mission: string, contactName: string): Promise<{ subject: string, body: string }> {
-  const greeting = contactName === "Team" ? `Hi ${company} Team,` : `Hi ${contactName},`;
-
-  const prompt = `
-Generate an eye-catching, high-impact cold email for a startup founder as valid JSON. 
-YOU ARE RISHAV TARWAY. Write strictly in the FIRST PERSON ("I").
-NEVER mention your own name ("Rishav" or "Tarway") in the body.
-
-Applicant Facts (USE FIRST PERSON):
-- IIIT Bangalore: I built high-scale BDD test suites with the MOSIP team.
-- Classplus: I worked with the Classplus team to scale backend for 10k+ users.
-- OpenPrinting: I merged critical fuzzing layer PR #48.
-- Skills: TypeScript, Node.js, Java, Python, Selenium, AWS.
-
-Startup Name: "${company}"
-Mission: "${mission}"
-Founder Name: "${contactName}"
-
-STRICT RULES:
-1. Return JSON: {"subject": "...", "body": "..."}
-2. GREETING: Start with exactly one greeting: "Hi ${contactName}," or "Hey ${contactName},".
-3. SUBJECT LINE: Catchy brackets [] or curly braces {}.
-4. BODY: NO BOLDING. NEVER use placeholders or blanks. No fluff.
-5. THE ASK: End with: "Would you be open to a quick 17-minute coffee chat this week or next?"`;
-
-  console.log(`   🤖 Generating humanized YC pitch for ${company}...`);
-  const result = await callAI(prompt, true);
-
-  if (!result) {
-    return {
-      subject: `[Draft] Engineering at ${company}`,
-      body: `<p>${greeting}</p><p>${company}'s mission to ${mission} really resonates with me. I've spent my spare time shipping code to Open Source and recently merged PR #48 for OpenPrinting's fuzzing architecture.</p><p>I've done 6 paid internships (3 onsite, 3 remote), most notably handling core backend optimization at Classplus. I'm the guy who builds internal tools from scratch locally, which might save you a few SaaS seats.</p><p>I'd love to chat more about how I can contribute to the team. Would you be open to a quick 17-minute coffee chat this week or next?</p>${SIGNATURE_HTML}`
-    };
-  }
-
-  return { subject: result.subject, body: `<p>${greeting}</p>${result.body}${SIGNATURE_HTML}` };
-}
-
-// ============================================================================
-// 5. GMAIL DRAFT CREATION LOGIC
-// ============================================================================
-class MailComposer {
-  options: any;
-  constructor(options: any) { this.options = options; }
-  compile() {
-    return {
-      build: async () => {
-        let transporter = nodemailer.createTransport({ streamTransport: true });
-        return new Promise<Buffer>((resolve, reject) => {
-          transporter.sendMail(this.options, (err, info) => {
-            if (err) return reject(err);
-            if (Buffer.isBuffer(info.message)) {
-              return resolve(info.message);
+                const content = data.choices[0].message.content;
+                if (jsonFlag) {
+                    try {
+                        return JSON.parse(content.substring(content.indexOf('{'), content.lastIndexOf('}') + 1));
+                    } catch {
+                        console.log(`   ⚠️ Failed to parse AI JSON response.`);
+                        break;
+                    }
+                }
+                return content;
+            } catch (e: any) {
+                console.log(`   ⚠️ Request failed for ${model.name}: ${e.message}`);
+                break;
             }
-            const chunks: any[] = [];
-            (info.message as any).on('data', (chunk: any) => chunks.push(chunk));
-            (info.message as any).on('end', () => resolve(Buffer.concat(chunks)));
-          });
-        });
-      }
-    };
+        }
+    }
+    return null;
+}
+
+async function generateEmailContent(jobText: string, company: string, contactName: string): Promise<{ subject: string, body: string }> {
+  const salutation = contactName && contactName !== "Team" ? `Hi ${contactName},` : `Hi ${company} Hiring Team,`;
+
+  const prompt = `You are writing a job application email on behalf of Rishav Tarway. Follow the format EXACTLY.
+
+JOB POST:
+"${safeSlice(jobText, 800)}"
+
+TARGET COMPANY: ${company}
+
+ABOUT RISHAV:
+- 19 months experience across 5 internships (including MOSIP, Classplus).
+- Tech Skills: Node.js, React, Android, Python, System Optimization, AI/ML.
+
+FORMAT RULES:
+1. SUBJECT LINE: MUST BE EXTREMELY UNIQUE. NO TWO EMAILS SHOULD EVER HAVE MATCHING TITLES. 
+   - Vary the "vibe" for each draft (e.g., one value-driven, one curious, one direct).
+   - STRICTLY rotate between double brackets/braces/parentheses: {{Subject}}, [[Subject]], or ((Subject)). 
+   - Integrate unique symbols in EVERY title: :, >>, |, //, ++, --, <>, !=, ==.
+   - Use specific details from the job post to ensure uniqueness. NO emojis.
+   - Example styles: "{{Scaling ${company} >> P1 Insight}}", "[[Observed: ${company} Backend]] // Question", "((Curious about ${company} mission)) ++ Rishav".
+2. STRICTLY 2 PARAGRAPHS FOR AI TO GENERATE (I will manually append the 3rd):
+   - OVERALL LIMIT: The complete email should never exceed 120 - 150 words.
+   - Para 1: EXACTLY ONE SHORT SENTENCE (max 20 words). Explicitly align the company's mission/goals from the job post with Rishav's specific tech skills.
+   - Para 2: EXACTLY ONE SHORT SENTENCE (max 20 words). Summarize his experience across all 5 internships and showcase how those core tech skills drove impact.
+3. Keep the content limited to 1 or 1.5 lines per paragraph. NO sign-off. NO fluff.
+
+RESPOND WITH RAW JSON ONLY:
+{ "subject": "...", "para1": "...", "para2": "..." }`;
+
+  const result = await callAI(prompt, true);
+
+  const fallbackSubject = `{{Inquiry}} Software Development >> ${company}`;
+  const p1 = result?.para1 || `I am reaching out regarding the open role at ${company}. My robust foundation in system optimization and backend telemetry strongly aligns with your mission and technical requirements.`;
+  const p2 = result?.para2 || `Over the past 19 months across 5 intensive internships (including MOSIP and Classplus), I have extensively utilized Node.js, React, and Android development to scale dynamic applications and drastically reduce system latency.`;
+  const p3 = `My Open Source Recent PRs <a href="https://github.com/OpenPrinting/fuzzing/pull/48">#48</a>, <a href="https://github.com/OpenPrinting/fuzzing/pull/49">#49</a>, <a href="https://github.com/OpenPrinting/fuzzing/pull/50">#50</a>, <a href="https://github.com/OpenPrinting/fuzzing/pull/51">#51</a> and detailed projects: <a href="https://github.com/rishavtarway/CoinWatch">CoinWatch</a> (60fps Crypto Tracker — React Native) and <a href="https://github.com/rishavtarway/ProResume">ProResume</a> (AI Resume Builder — GPT-4/FastAPI).`;
+  
+  const subject = result?.subject || fallbackSubject;
+  const bodyRaw = `<p>${salutation}</p><p>${p1}</p><p>${p2}</p><p>${p3}</p>`;
+
+  return { subject, body: bodyRaw + SIGNATURE_HTML };
+}
+
+async function generateFollowUpContent(jobText: string, company: string, contactName: string): Promise<{ subject: string, body: string }> {
+  const salutation = contactName && contactName !== "Team" ? `Hi ${contactName},` : `Hi Team,`;
+
+  const prompt = `You are writing a polite follow-up application on behalf of Rishav Tarway. 
+  Rishav previously applied but wanted to quickly bump the thread to show his continued interest.
+
+  JOB POST SUMMARY:
+  "${safeSlice(jobText, 500)}"
+  
+  TARGET COMPANY: ${company}
+  RECIPIENT: ${contactName || "Team"}
+
+  FORMAT RULES (follow exactly):
+  1. SUBJECT LINE: Catchy, unique, and different from the initial application. STRICTLY use varied brackets like {{Subject}}, [[Subject]], or ((Subject)). Include symbols like :, >>, or |. NO emojis. Example: "{{Quick Check}} ${company} infrastructure", "[[Bump]] Re: Engineering @ ${company}".
+  2. BODY:
+    - Start with salutation: "${salutation}"
+    - Paragraph 1: Mention he applied earlier and is checking in because he is very excited about the mission and the role.
+    - Paragraph 2: Briefly (1 sentence) re-emphasize that his 19 months of experience at MOSIP/Classplus makes him a strong candidate.
+    - Paragraph 3: Thank them for their time and mention he is available for a quick chat.
+  3. DO NOT include sign-off.
+  4. RESPOND WITH PURE JSON ONLY:
+  { "subject": "...", "body": "<p>${salutation}</p><p>Para 1</p><p>Para 2</p><p>Para 3</p>" }`;
+
+  const result = await callAI(prompt, true);
+  const fallbackBody = `<p>${salutation}</p><p>I'm bumping this to re-iterate my interest in the SWE opening at ${company}. Having worked on high-scale systems at Classplus, I'm confident I can contribute effectively to your team.</p><p>Thank you for your time, and I look forward to hearing from you soon.</p>`;
+
+  if (!result || typeof result !== 'object') {
+    return { subject: `[Follow-up] SWE Role at ${company}`, body: fallbackBody + SIGNATURE_HTML };
   }
+  const subject = typeof result.subject === 'string' ? result.subject : `[Follow-up] SWE Role at ${company}`;
+  const bodyRaw = typeof result.body === 'string' ? result.body : fallbackBody;
+
+  return { subject, body: bodyRaw + SIGNATURE_HTML };
 }
 
 async function createDraftInGmail(gmail: any, toEmail: string, subject: string, htmlBody: string) {
-  const mailOptions = {
-    to: toEmail,
-    subject: subject,
-    html: htmlBody,
-    attachments: ATTACHMENTS
-  };
-
-  const mail = new MailComposer(mailOptions);
-  const message = await mail.compile().build();
-  const encodedMessage = Buffer.from(message).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-
-  await gmail.users.drafts.create({
-    userId: 'me',
-    requestBody: { message: { raw: encodedMessage } },
+  const mailOptions = { to: toEmail, subject: subject, html: htmlBody, attachments: ATTACHMENTS };
+  const transporter = nodemailer.createTransport({ streamTransport: true });
+  const message = await new Promise<Buffer>((resolve, reject) => {
+    transporter.sendMail(mailOptions, (err, info) => {
+      if (err) return reject(err);
+      const chunks: any[] = [];
+      (info.message as any).on('data', (chunk: any) => chunks.push(chunk));
+      (info.message as any).on('end', () => resolve(Buffer.concat(chunks)));
+    });
   });
+  const encoded = Buffer.from(message).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  await gmail.users.drafts.create({ userId: 'me', requestBody: { message: { raw: encoded } } });
 }
 
 // ============================================================================
-// 6. MAIN EXECUTION FLOW
+// MAIN EXECUTION
 // ============================================================================
-async function checkFormFillerStatus() {
-  process.stdout.write("🔍 Checking Form Filler Server status... ");
-  try {
-    const res = await fetch('http://127.0.0.1:3001/api/form-filler/status', { method: 'GET', signal: AbortSignal.timeout(3000) });
-    const data = await res.json() as any;
-    if (data.status === 'online') {
-      console.log(`[ONLINE] ✅ (AI Models Enabled: ${data.llm_available ? 'YES 🤖' : 'NO ⚠️'})`);
-    } else {
-      console.log(`[OFFLINE] ❌`);
-    }
-  } catch (e: any) {
-    console.log(`[OFFLINE] ❌ (Please run 'npm run form-filler')`);
-  }
-}
-
 async function main() {
+  console.log("==================================================");
+  console.log("   !!! JOBPULSE DISCOVERY AGENT v2.0 !!!   ");
   console.log("==================================================");
   console.log("   AUTOMATED JOB APPLICATION WORKFLOW INITIATED   ");
   console.log("==================================================");
 
-  await checkFormFillerStatus();
+  const config = Config.getInstance();
+  globalClient = new TelegramClient(config.telegram);
 
-  // Phase 1: Extract New Jobs
-  const newJobs = await extractNewJobs();
+  const cleanup = async (signal: string) => {
+    console.log(`\n🛑 Received ${signal}. Closing sessions...`);
+    if (globalClient) try { await globalClient.disconnect(); } catch (e) {}
+    process.exit(0);
+  };
+  process.on('SIGINT', () => cleanup('SIGINT'));
+  process.on('SIGTERM', () => cleanup('SIGTERM'));
 
-  // Phase 2: Generate & Upload
-  console.log(`\n🚀[PHASE 2] Connecting to Gmail and processing ${newJobs.length} new jobs...`);
-  
-  let gmail: any;
   try {
     const auth = await authorizeGmail();
-    gmail = google.gmail({ version: 'v1', auth: auth as any });
-    console.log("✅ Gmail connection established.");
-  } catch (authErr: any) {
-    console.error(`\n❌ GMAIL AUTHENTICATION FAILED: ${authErr.message}`);
-    console.log("Please resolve the auth issue and restart the process.");
-    process.exit(1);
-  }
+    const jobs = await extractNewJobs(globalClient);
+    if (jobs.length > 0) {
+      console.log(`\n🚀 [PHASE 2] Connecting to Gmail and processing ${jobs.length} jobs...`);
+      const gmail = google.gmail({ version: 'v1', auth: auth as any });
+      
+      for (let i = 0; i < jobs.length; i++) {
+        const job = jobs[i];
+        const company = job.company || "Unknown";
+        const contact = extractName(job.email, job.text);
+        
+        const alreadySent = await checkIfSentInGmail(gmail, job.email);
+        if (alreadySent) {
+          console.log(`\n[${i + 1}/${jobs.length}] Skipping ${company} (Date: ${job.date}, already sent)`);
+          continue;
+        }
 
-  for (let i = 0; i < newJobs.length; i++) {
-    const job = newJobs[i];
-    const companyName = await extractCompanyName(job.text, job.email);
-    const contactName = extractName(job.email, job.text);
+        console.log(`\n[${i + 1}/${jobs.length}] Processing INITIAL for ${company} (${job.email})`);
+        const { subject, body } = await generateEmailContent(job.text, company, contact);
 
-    console.log(`\n[${i + 1}/${newJobs.length}] Drafting for ${companyName}(${job.email})`);
-
-    // 1. Generate text via OpenRouter
-    const { subject, body } = await generateEmailContent(job.text, companyName, contactName);
-
-    // 2. Upload to Gmail
-    try {
-      await createDraftInGmail(gmail, job.email, subject, body);
-      console.log(`   ✅ Draft created in Gmail.`);
-
-      // 3. Log to Tracker
-      try {
-        const port = process.env.SERVER_PORT || '3000';
-        await fetch(`http://127.0.0.1:${port}/api/applications`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            company: companyName,
-            role: "Software Engineer",
-            channel: job.channel,
-            telegramId: job.id,
-            email: job.email,
-            link: job.link || null, // LOG LINK IF IT HAD BOTH
-            description: job.text,
-            status: 'applied',
-            type: 'telegram'
-          })
-        });
-      } catch (logErr) {
-        // Silent fail for logging
-      }
-
-    } catch (e: any) {
-      console.error(`   ❌ Failed to create draft:`, e.message);
-      if (e.response) {
-        console.error(`      Error Details:`, JSON.stringify(e.response.data, null, 2));
+        try {
+          await createDraftInGmail(gmail, job.email, subject, body);
+          console.log(`   ✅ Draft created.`);
+          await fetch(`http://127.0.0.1:${SERVER_PORT}/api/applications`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              company, 
+              role: "Software Engineer", 
+              channel: job.channel, 
+              telegramId: job.id, 
+              email: job.email, 
+              link: job.link, 
+              description: `<b>SUBJECT: ${subject}</b><br><br>${body}`, 
+              jobDescription: job.text, 
+              status: 'applied', 
+              type: 'telegram', 
+              appliedDate: new Date().toISOString(), // Now correctly tracks when WE applied
+              postedDate: job.date, // Tracks when it was posted on Telegram
+              _timestamp: Date.now() 
+            })
+          });
+        } catch (e: any) { console.error(`   ❌ Failed: ${e.message}`); }
+        await new Promise(r => setTimeout(r, 5000));
       }
     }
-
-    // Delay 5 seconds between each job to prevent 15 RPM rate-limiting
-    await new Promise(r => setTimeout(r, 5000));
+    
+    // State is now saved immediately after discovery Phase 1.
+    console.log("\n🎉 ALL DONE! Cleaning up...");
+    if (globalClient) {
+      await globalClient.disconnect();
+    }
+    process.exit(0);
+  } catch (error: any) {
+    console.error('❌ DISCOVERY ERROR:', error);
+    if (globalClient) {
+      try { await globalClient.disconnect(); } catch (e) {}
+    }
+    process.exit(1);
   }
-
-  console.log("\n==================================================");
-  console.log(" 🎉 ALL DONE! Please check your Gmail Drafts. ");
-  console.log("==================================================");
-  process.exit(0);
 }
 
 main().catch(console.error);

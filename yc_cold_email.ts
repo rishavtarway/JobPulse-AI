@@ -248,12 +248,13 @@ async function deepResearchCompany(company: string, originalMission: string, car
     let careerPageText = "";
     const companyDomain = careerUrl ? new URL(careerUrl).hostname.replace('www.', '') : `${company.toLowerCase().replace(/\s+/g, '')}.com`;
 
-    // 1. Better search for Founders and Team
+    // 1. Better search for Founders and Team with specific Tool queries
     const searchQueries = [
+        `"${company}" founders names CEO CTO Y Combinator`,
         `site:linkedin.com/in "${company}" (Founder OR CEO OR "Co-Founder" OR "CTO")`,
-        `"${company}" founders email linkedin`,
-        `"${company}" tech team members`,
-        `"${company}" ${companyDomain} email pattern hunter.io`
+        `"${company}" founders email "apollo.io" OR "contactout" OR "snov.io"`,
+        `"${company}" email pattern "hunter.io" OR "voila norbert" OR "kaspr"`,
+        `"${company}" tech team members "saleshandy" OR "apollo"`
     ];
 
     if (careerUrl) {
@@ -302,8 +303,7 @@ Extract the following as a JSON object:
     }
 
     return {
-        founders: founders,
-        discoveredEmail: discoveredEmail,
+        contacts: parsed.contacts || [],
         deepMission: parsed.deep_mission || originalMission || "Building high scale technology.",
         techStack: parsed.tech_stack || "software engineering",
         sources: uniqueLinks
@@ -318,19 +318,23 @@ NEVER mention your own name ("Rishav" or "Tarway") in the body.
 
 Mission: "${research.deepMission}"
 Tech Stack: "${research.techStack}"
-Founder Name: "${research.founders}"
+Founder Name: "${research.contactName}"
+Founder Role: "${research.contactRole || 'Founder'}"
 
 Applicant Facts (USE FIRST PERSON):
-- IIIT Bangalore: I built high-scale BDD test suites with the MOSIP team.
+- IIIT Bangalore: I built high-scale BDD test suites with the MOSIP team (gov identity systems).
 - Classplus: I worked with the Classplus team to scale backend for 10k+ users.
 - OpenPrinting: I merged critical fuzzing layer PR #48.
 - Skills: TypeScript, Node.js, Java, Python, Selenium, AWS.
 
 STRICT RULES:
 1. Return JSON: {"subject": "...", "body": "..."}
-2. GREETING: Start with exactly one greeting: "Hi ${research.founders.split(' ')[0]}," or "Hey ${research.founders.split(' ')[0]},".
-3. SUBJECT LINE: Catchy brackets [] or curly braces {}.
-   Example: "[Quick Question] ${company} architecture", "{Startup Inquiry} Re: ${company}".
+2. GREETING: Start with exactly one greeting: "Hi ${research.contactName.split(' ')[0]}," or "Hey ${research.contactName.split(' ')[0]},".
+3. SUBJECT LINE: MUST BE EXTREMELY UNIQUE. NO TWO SUBJECT LINES SHOULD EVER MATCH.
+   - Vary the approach significantly for each draft (e.g., challenge-focused, curiosity-driven, or outcome-oriented).
+   - STRICTLY rotate between double brackets/braces/parentheses: {{Subject}}, [[Subject]], or ((Subject)).
+   - Always include distinctive symbols like :, >>, |, //, ++, --, <>, !=, ==.
+   - Example styles: "{{Quick observation on ${company} stack}}", "[[Research]] // Why I'm interested in ${company}", "((Question about ${company} growth)) | Engineering". NO emojis.
 4. BODY: NO BOLDING. NEVER use your own name in the sentences. 
 5. THE ASK: End with: "Would you be open to a quick 17-minute coffee chat this week or next?"`;
 
@@ -408,62 +412,70 @@ async function main() {
 
         // 1. Deep Research
         const research = await deepResearchCompany(company, context, career_url);
-        console.log(`   💡 Found Founders: ${research.founders}`);
-        console.log(`   💡 Found Mission: ${research.deepMission}`);
+        
+        const contactsToMail = research.contacts && research.contacts.length > 0 
+            ? research.contacts 
+            : (email ? [{ name: "Team", email: email, role: "Team" }] : []);
 
-        // Use discovered email if baseline is missing
-        const finalEmail = email || research.discoveredEmail;
-        if (!finalEmail) {
-            console.log(`   ⚠️ WARNING: Could not discover any email for ${company}. Moving to Tracker only.`);
-        } else {
-            console.log(`   📧 Target Email: ${finalEmail}`);
+        if (contactsToMail.length === 0) {
+            console.log(`   ⚠️ WARNING: Could not discover any contacts for ${company}.`);
+            continue;
         }
 
-        // 2. Draft the highly tailored pitch
-        console.log(`   ✍️ Drafting tailored pitch leveraging deep research...`);
-        const { subject, body } = await generateAgenticDraft(company, research);
+        for (const contact of contactsToMail) {
+            console.log(`\n   👤 Contact: ${contact.name} (${contact.role})`);
+            console.log(`   📧 Email: ${contact.email}`);
 
-        // 3. Document in Markdown Log
-        mdLog += `### Startup: ${company}\n`;
-        mdLog += `**Contact**: ${research.founders} (${finalEmail || 'Unknown'})\n\n`;
-        mdLog += `**Agent Deep Research / Mission Extracted**:\n> ${research.deepMission}\n\n`;
-        mdLog += `**Detected Tech/Values**:\n> ${research.techStack}\n\n`;
-        mdLog += `**Sources (Verified Web Results)**:\n`;
-        research.sources.slice(0, 5).forEach((src: string) => {
-            mdLog += `- [${src}](${src})\n`;
-        });
-        mdLog += `\n**Tailored AI Draft Preview**: \n\`\`\`html\nSubject: ${subject}\n\n${body.replace(/<p>/g, '').replace(/<\/p>/g, '\n\n')}\n\`\`\`\n`;
-        mdLog += `---\n`;
-
-        // 4. Send to Gmail Drafts (if email exists)
-        if (finalEmail) {
-            try {
-                await createDraftInGmail(gmail, finalEmail, subject, body);
-                console.log(`   ✅ Tailored Draft created in Gmail for ${company}.`);
-            } catch (e: any) {
-                console.error(`   ❌ Failed to create draft:`, e.message);
-            }
-        }
-
-        // 5. Commit to Tracker Database
-        try {
-            const port = process.env.SERVER_PORT || '3000';
-            await fetch(`http://127.0.0.1:${port}/api/applications`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    company: company,
-                    role: "Software Engineer (Founding/Core)",
-                    channel: "YC Research Agent",
-                    email: finalEmail || "No Email Discovered",
-                    description: `RESEARCH DATA:\nFounders: ${research.founders}\nMission: ${research.deepMission}\nTech: ${research.techStack}\n\nSources:\n${research.sources.slice(0, 3).join('\n')}`,
-                    status: finalEmail ? 'applied' : 'to_apply',
-                    type: 'yc'
-                })
+            // 2. Draft the highly tailored pitch
+            console.log(`   ✍️ Drafting tailored pitch...`);
+            const { subject, body } = await generateAgenticDraft(company, {
+                ...research,
+                contactName: contact.name,
+                contactRole: contact.role
             });
-        } catch (e) { }
 
-        await new Promise(r => setTimeout(r, 4000));
+            // 3. Document in Markdown Log
+            mdLog += `### Startup: ${company} (${contact.name})\n`;
+            mdLog += `**Contact**: ${contact.name} - ${contact.role} (${contact.email})\n\n`;
+            mdLog += `**Agent Deep Research / Mission Extracted**:\n> ${research.deepMission}\n\n`;
+            mdLog += `**Detected Tech/Values**:\n> ${research.techStack}\n\n`;
+            mdLog += `**Sources (Verified Web Results)**:\n`;
+            research.sources.slice(0, 5).forEach((src: string) => {
+                mdLog += `- [${src}](${src})\n`;
+            });
+            mdLog += `\n**Tailored AI Draft Preview**: \n\`\`\`html\nSubject: ${subject}\n\n${body.replace(/<p>/g, '').replace(/<\/p>/g, '\n\n')}\n\`\`\`\n`;
+            mdLog += `---\n`;
+
+            // 4. Send to Gmail Drafts (if email exists)
+            if (contact.email) {
+                try {
+                    await createDraftInGmail(gmail, contact.email, subject, body);
+                    console.log(`   ✅ Tailored Draft created in Gmail for ${company} (${contact.name}).`);
+                } catch (e: any) {
+                    console.error(`   ❌ Failed to create draft:`, e.message);
+                }
+            }
+
+            // 5. Commit to Tracker Database
+            try {
+                const port = process.env.SERVER_PORT || '3000';
+                await fetch(`http://127.0.0.1:${port}/api/applications`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        company: company,
+                        role: `Software Engineer (Founding/Core) - ${contact.name}`,
+                        channel: "YC Research Agent",
+                        email: contact.email || "No Email Discovered",
+                        description: `RESEARCH DATA:\nFounder: ${contact.name}\nRole: ${contact.role}\nMission: ${research.deepMission}\nTech: ${research.techStack}\n\nSources:\n${research.sources.slice(0, 3).join('\n')}`,
+                        status: contact.email ? 'applied' : 'to_apply',
+                        type: 'yc'
+                    })
+                });
+            } catch (e) { }
+
+            await new Promise(r => setTimeout(r, 4000));
+        }
     }
 
     fs.appendFileSync(LOGS_FILE, mdLog);

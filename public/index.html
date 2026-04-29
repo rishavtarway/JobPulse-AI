@@ -271,20 +271,55 @@
 
         .chan-head {
             display: flex;
-            align-items: center;
             justify-content: space-between;
-            margin-bottom: 32px;
-            padding: 20px 32px;
-            background: var(--surface);
-            color: var(--text-primary);
-            border-radius: 20px;
-            position: sticky;
-            top: 170px; /* Below pill-row which is at 100px + ~64px height */
-            z-index: 1400;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-            border: 1px solid var(--border);
+            align-items: center;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
         }
 
+        .chan-head-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .chan-search {
+            position: relative;
+            margin-left: auto;
+            margin-right: 20px;
+        }
+
+        .chan-search input {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 10px 15px 10px 40px;
+            color: var(--text);
+            font-size: 13px;
+            font-weight: 700;
+            width: 180px;
+            transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+            font-family: 'Outfit', sans-serif;
+        }
+
+        .chan-search input:focus {
+            outline: none;
+            border-color: var(--accent);
+            width: 300px;
+            background: var(--surface);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+        }
+
+        .chan-search::before {
+            content: "🔍";
+            position: absolute;
+            left: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 14px;
+            opacity: 0.6;
+        }
         .chan-head h2 {
             font-family: 'Outfit', sans-serif;
             font-size: 24px;
@@ -295,7 +330,7 @@
         .chan-meta {
             font-size: 11px;
             font-weight: 900;
-            color: rgba(255, 255, 255, 0.6);
+            color: var(--text-muted);
             text-transform: uppercase;
             letter-spacing: 0.1em;
         }
@@ -351,14 +386,14 @@
             font-family: 'Outfit', sans-serif;
             font-size: 24px;
             font-weight: 700;
-            color: var(--dark);
+            color: var(--accent); /* CHANGED TO ORANGE */
             margin-bottom: 4px;
         }
 
         .job-meta {
             font-size: 14px;
             font-weight: 600;
-            color: var(--text-muted);
+            color: var(--text-secondary); /* BETTER CONTRAST */
             margin-bottom: 20px;
         }
 
@@ -373,6 +408,70 @@
             overflow-y: auto;
             position: relative;
             border: 1px solid var(--border);
+        }
+
+        /* PREMIUM JOB POST SECTION */
+        .job-post-toggle {
+            margin-top: 16px;
+            padding: 12px 16px;
+            background: var(--bg);
+            border-radius: 14px;
+            border: 1px dashed var(--border);
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.3s;
+        }
+
+        .job-post-toggle:hover {
+            background: var(--surface);
+            border-color: var(--accent);
+            border-style: solid;
+        }
+
+        .job-post-toggle span {
+            font-size: 11px;
+            font-weight: 800;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .original-job-post {
+            margin-top: 12px;
+            padding: 20px;
+            background: var(--surface);
+            border:1px solid var(--border);
+            border-radius: 16px;
+            font-size: 13px;
+            line-height: 1.6;
+            color: var(--text-primary);
+            max-height: 400px;
+            overflow-y: auto;
+            display: none;
+            white-space: pre-wrap;
+            box-shadow: inset 0 2px 10px rgba(0,0,0,0.02);
+            animation: slideDown 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .chevron {
+            transition: transform 0.3s;
+            font-size: 10px;
+            opacity: 0.5;
+        }
+
+        .job-post-toggle.active .chevron {
+            transform: rotate(180deg);
+        }
+
+        .job-post-toggle.active span {
+            color: var(--accent);
         }
 
         /* BUTTONS - HIGH CONTRAST */
@@ -649,6 +748,13 @@
                     <button class="btn-pill btn-primary" style="width:100%; margin-top:16px;" onclick="triggerYc()">🚀
                         ANALYZE & DRAFT</button>
                 </div>
+
+                <div class="bento-card">
+                    <p style="font-size:10px; font-weight:900; color:var(--text-muted); margin-bottom:12px; letter-spacing:0.1em; text-transform:uppercase;">Follow-up Engine</p>
+                    <p style="font-size:12px; color:var(--text-secondary); margin-bottom:14px; line-height:1.5;">Auto-draft follow-ups for emails sent <strong>2-3 days ago</strong>. Uses the same subject prefixed with <code style="background:var(--bg);padding:2px 6px;border-radius:4px;">[Follow up]</code>.</p>
+                    <button id="btn-followup" class="btn-pill" style="width:100%; background:linear-gradient(135deg,#1a6b3c,#0f4d2e); color:#fff;" onclick="triggerFollowUps()">📬 DRAFT FOLLOW-UPS (2-3 DAYS)</button>
+                    <div id="followup-status" style="margin-top:12px;font-size:12px;color:var(--text-secondary);display:none;text-align:center;"></div>
+                </div>
             </div>
 
             <!-- MAIN BENTO FEED -->
@@ -736,7 +842,7 @@
         function openEdit(id, st, nt) {
             document.getElementById('edit-id').value = id;
             document.getElementById('edit-status').value = st;
-            document.getElementById('edit-notes').value = nt;
+            document.getElementById('edit-notes').value = decodeURIComponent(nt);
             document.getElementById('edit-modal').style.display = 'flex';
         }
 
@@ -749,6 +855,19 @@
             pollLogs();
         }
 
+        async function stopDiscovery() {
+            try {
+                const r = await fetch('/api/stop', { method: 'POST' });
+                const d = await r.json();
+                showToast(d.message || 'Termination signal sent.');
+                // Update UI slightly to show we are waiting for termination
+                document.getElementById('btn-stop').innerHTML = 'WAITING FOR STOP...';
+                document.getElementById('btn-stop').disabled = true;
+            } catch (e) {
+                showToast('Failed to stop process.');
+            }
+        }
+
         async function triggerYc() {
             const v = document.getElementById('yc-input').value; if (!v.trim()) return;
             document.getElementById('term-view').style.display = 'block';
@@ -756,24 +875,71 @@
             pollLogs();
         }
 
+        async function triggerFollowUps() {
+            const btn = document.getElementById('btn-followup');
+            const status = document.getElementById('followup-status');
+            btn.disabled = true;
+            btn.textContent = '⏳ Drafting follow-ups...';
+            status.style.display = 'block';
+            status.textContent = 'Connecting to Gmail and scanning applications...';
+
+            try {
+                const res = await fetch('/api/send-followups', { method: 'POST' });
+                const data = await res.json();
+                if (!res.ok) {
+                    status.innerHTML = `<span style="color:#ff4d4d;">❌ ${data.error}</span>`;
+                } else {
+                    status.innerHTML = `<span style="color:var(--accent);">✅ ${data.message} — Check the terminal for progress.</span>`;
+                    document.getElementById('term-view').style.display = 'block';
+                    pollLogs();
+                }
+            } catch(e) {
+                status.innerHTML = `<span style="color:#ff4d4d;">❌ Network error: ${e.message}</span>`;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '📬 DRAFT FOLLOW-UPS (2-3 DAYS)';
+            }
+        }
+
         function pollLogs() {
             if (pollInterval) return; // Prevent multiple intervals
             pollInterval = setInterval(async () => {
                 const r = await fetch('/api/logs'); const d = await r.json();
                 const out = document.getElementById('terminal');
+                
+                // 🔄 Handle Log Reset: If server reset logs (new process started), reset tracker
+                if (d.logs.length < lastS) {
+                    out.innerHTML = '';
+                    lastS = 0;
+                }
+
                 if (d.logs.length > lastS) {
                     const ln = d.logs.substring(lastS).split('\n');
-                    ln.forEach(l => { if (!l) return; out.innerHTML += l.replace(/\[PHASE (\d+)\]/g, '<b>[PHASE $1]</b>') + '<br>'; });
+                    ln.forEach(l => { 
+                        if (!l) return;
+                        // Colorize specific keywords
+                        let fmt = l.replace(/\[PHASE (\d+)\]/g, '<b>[PHASE $1]</b>');
+                        if (l.includes('✅')) fmt = `<span style="color:var(--accent); font-weight:800;">${fmt}</span>`;
+                        if (l.includes('📡')) fmt = `<span style="color:var(--text-primary);">${fmt}</span>`;
+                        if (l.includes('❌') || l.includes('⚠️')) fmt = `<span style="color:#ff4d4d;">${fmt}</span>`;
+                        
+                        out.innerHTML += fmt + '<br>'; 
+                    });
                     lastS = d.logs.length; out.scrollTop = out.scrollHeight;
                 }
-                if (!d.isRunning && d.logs.includes('Exiting')) {
+                if (!d.isRunning && (d.logs.includes('finished') || d.logs.includes('Exiting') || d.logs.includes('TERMINATED') || d.logs.includes('DONE'))) {
+                    console.log("🛑 Discovery finished. Cleaning up poll interval.");
+                    clearInterval(pollInterval);
+                    pollInterval = null;
                     document.getElementById('btn-trigger').disabled = false;
                     document.getElementById('btn-trigger').innerHTML = '✨ START AUTO-DISCOVERY';
                     document.getElementById('btn-stop').style.display = 'none';
+                    document.getElementById('btn-stop').disabled = false;
+                    document.getElementById('btn-stop').innerHTML = '🛑 STOP PROCESS';
                     syncData();
                 }
                 document.getElementById('otp-panel').style.display = d.otpRequired ? 'block' : 'none';
-            }, 1500);
+            }, 2000);
         }
 
         function showTab(t) {
@@ -792,7 +958,7 @@
             try {
                 const rA = await fetch('/api/applications'); const allApps = await rA.json();
 
-                const apps = allApps.filter(a => a.type !== 'yc' && a.status !== 'to_apply');
+                const apps = allApps.filter(a => a.type !== 'yc'); // Include 'to_apply' in main view
                 const ycApps = allApps.filter(a => a.type === 'yc');
 
                 const rM = await fetch('/api/manual-jobs'); const mans = await rM.json();
@@ -800,7 +966,7 @@
                 const combined = allApps;
                 if (combined.length > 0) latestTS = Math.max(...combined.map(x => new Date(x.appliedDate).getTime() || 0));
 
-                document.getElementById('st-total').textContent = apps.length;
+                document.getElementById('st-total').textContent = allApps.filter(a => a.type !== 'yc').length;
                 document.getElementById('st-applied').textContent = apps.filter(x => x.status === 'applied').length;
 
                 draw('tr-list', 'tr-pills', apps);
@@ -817,8 +983,8 @@
             const grp = {};
             
             data.sort((a, b) => {
-                const timeA = new Date(a.appliedDate).getTime() || 0;
-                const timeB = new Date(b.appliedDate).getTime() || 0;
+                const timeA = (a.appliedDate ? new Date(a.appliedDate).getTime() : 0) || a._timestamp || 0;
+                const timeB = (b.appliedDate ? new Date(b.appliedDate).getTime() : 0) || b._timestamp || 0;
                 return timeB - timeA;
             }).forEach(i => { 
                 const c = i.channel || "External Discovery"; 
@@ -838,16 +1004,27 @@
             }
 
             const prefix = listId.split('-')[0];
-            list.innerHTML = Object.entries(grp).map(([name, itms]) => `
-                <div class="chan-block reveal" id="${prefix}-${name.replace(/\s+/g, '-')}">
+            list.innerHTML = Object.entries(grp).map(([name, itms]) => {
+                const blockId = `${prefix}-${name.replace(/\s+/g, '-')}`;
+                return `
+                <div class="chan-block reveal" id="${blockId}">
                     <div class="chan-head">
-                        <div>
-                            <span style="font-size:10px; opacity:0.7; font-weight:800; display:block;">SOURCE CHANNEL</span>
-                            <h2>${name}</h2>
+                        <div class="chan-head-info">
+                            <div>
+                                <span style="font-size:10px; opacity:0.7; font-weight:800; display:block;">SOURCE CHANNEL</span>
+                                <h2 style="margin:0;">${name}</h2>
+                            </div>
                         </div>
+                        
+                        <div class="chan-search">
+                            <input type="text" placeholder="Search in ${name}..." 
+                                oninput="filterChannel('${blockId}', this.value)">
+                        </div>
+
                         <span class="chan-meta">${itms.length} ACTIVE JOBS</span>
                     </div>
-                    ${itms.map(item => {
+                    <div class="job-container">
+                        ${itms.map(item => {
                 const jobTime = new Date(item.appliedDate).getTime();
                 // "Latest" is expanded to 48 hours to catch any weekend/overnight batches
                 const isN = jobTime >= (latestTS - 48 * 60 * 60 * 1000);
@@ -859,7 +1036,7 @@
                 });
 
                 return `
-                        <div class="job-card reveal" onclick="openEdit('${item.id}', '${item.status}', \`${(item.notes || '').replace(/`/g, '\\\\`')}\`)">
+                        <div class="job-card reveal" onclick="openEdit('${item.id}', '${item.status}', '${encodeURIComponent(item.notes || '')}')">
                             ${isN ? '<div class="latest-ribbon">🔥 LATEST</div>' : ''}
                             <div style="display:flex; justify-content:space-between; margin-bottom:16px; align-items: flex-start;">
                                 <div class="job-ico">${item.type === 'yc' ? '🍊' : '🚀'}</div>
@@ -875,16 +1052,54 @@
                             </div>
                             <h3 class="job-title">${item.company}</h3>
                             <p class="job-meta">${item.role} @ ${name}</p>
+                            
+                            <div style="font-size:10px; font-weight:800; color:var(--text-muted); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.05em;">
+                                ${item.type === 'telegram' && item.status === 'applied' ? '📧 Sent Email Draft' : '📝 Job Description'}
+                            </div>
                             <div class="job-desc">${(item.description || item.text || 'Discovering metadata...').replace(/\n/g, '<br>')}</div>
+
+                            ${(item.jobDescription || (item.type === 'manual' && item.description)) ? `
+                            <div class="job-post-toggle" onclick="event.stopPropagation(); toggleJobPost(this)">
+                                <span>🔍 View Original Job Post</span>
+                                <span class="chevron">▼</span>
+                            </div>
+                            <div class="original-job-post" onclick="event.stopPropagation()">
+                                ${item.jobDescription || item.description || 'Source text not available.'}
+                            </div>
+                            ` : ''}
                             
                             <div style="margin-top:24px; display:flex; gap:12px; align-items:center;">
                                 ${item.link ? `<a href="${item.link}" target="_blank" onclick="event.stopPropagation()" class="btn-pill btn-orange" style="padding:10px 24px; font-size:12px;">APPLY ON PORTAL</a>` : ''}
                                 <span style="font-size:10px; font-weight:700; color:var(--text-muted); margin-left:auto;">ID: ${item.telegramId || 'AUTO'}</span>
                             </div>
                         </div>
-                    `}).join('')}
+                    `;}).join('')}
+                    </div>
                 </div>
-            `).join('');
+            `;}).join('');
+        }
+
+        function filterChannel(blockId, query) {
+            const block = document.getElementById(blockId);
+            const cards = block.querySelectorAll('.job-card');
+            const q = query.toLowerCase().trim();
+            const countMeta = block.querySelector('.chan-meta');
+            let visibleCount = 0;
+
+            cards.forEach(card => {
+                const text = card.innerText.toLowerCase();
+                if (text.includes(q)) {
+                    card.style.display = 'block';
+                    visibleCount++;
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+
+            if (countMeta) {
+                countMeta.innerText = `${visibleCount} FOUND / ${cards.length} TOTAL`;
+                countMeta.style.color = q ? 'var(--accent)' : 'var(--text-muted)';
+            }
         }
 
         async function saveRecord() {
@@ -917,6 +1132,19 @@
             if (window.scrollY > 500) btt.classList.add('visible');
             else btt.classList.remove('visible');
         };
+
+        function toggleJobPost(el) {
+            const post = el.nextElementSibling;
+            const isActive = el.classList.contains('active');
+            
+            if (isActive) {
+                el.classList.remove('active');
+                post.style.display = 'none';
+            } else {
+                el.classList.add('active');
+                post.style.display = 'block';
+            }
+        }
 
         syncData();
     </script>

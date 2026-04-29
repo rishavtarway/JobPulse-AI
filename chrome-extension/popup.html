@@ -166,6 +166,45 @@
             box-shadow: none !important;
         }
 
+        /* TOGGLE SWITCH */
+        .toggle-container {
+            display: flex;
+            background: rgba(0,0,0,0.05);
+            border-radius: 100px;
+            padding: 4px;
+            position: relative;
+            margin-bottom: 16px;
+        }
+        
+        .toggle-btn {
+            flex: 1;
+            padding: 10px;
+            text-align: center;
+            font-size: 11px;
+            font-weight: 800;
+            color: var(--text-secondary);
+            cursor: pointer;
+            position: relative;
+            z-index: 2;
+            transition: color 0.3s;
+        }
+
+        .toggle-btn.active {
+            color: var(--dark);
+        }
+
+        .toggle-slider {
+            position: absolute;
+            top: 4px;
+            bottom: 4px;
+            width: calc(50% - 4px);
+            background: #fff;
+            border-radius: 100px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transition: transform 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
+            z-index: 1;
+        }
+
         /* TASK ITEMS */
         .task-list {
             max-height: 160px;
@@ -224,27 +263,50 @@
         <div class="status-pill" id="server-status">Connecting...</div>
     </div>
 
-    <div class="section">
-        <div class="section-title">Context Engine</div>
-        <button id="fill-tab-btn" class="btn-pill btn-orange" disabled>✨ Auto-Fill Active Page</button>
+    <div class="toggle-container">
+        <div class="toggle-slider" id="toggle-slider"></div>
+        <div class="toggle-btn active" id="tab-filler">📝 Form Filler</div>
+        <div class="toggle-btn" id="tab-resume">📄 Resume Builder</div>
     </div>
 
-    <div class="section" id="tasks-section">
-        <div class="section-title">
-            Dashboard Feed
-            <button id="refresh-tasks-btn"
-                style="background:none; border:none; cursor:pointer; color:var(--accent); font-weight:800; font-size:10px;">REFRESH</button>
+    <!-- FORM FILLER MODE -->
+    <div id="mode-filler">
+        <div class="section">
+            <div class="section-title">Context Engine</div>
+            <button id="fill-tab-btn" class="btn-pill btn-orange" disabled>✨ Auto-Fill Active Page</button>
         </div>
-        <div id="task-list" class="task-list">
-            <div style="text-align:center; padding:20px; font-size:11px; color:#A0AEC0;">Syncing tasks...</div>
+
+        <div class="section" id="tasks-section">
+            <div class="section-title">
+                Dashboard Feed
+                <button id="refresh-tasks-btn"
+                    style="background:none; border:none; cursor:pointer; color:var(--accent); font-weight:800; font-size:10px;">REFRESH</button>
+            </div>
+            <div id="task-list" class="task-list">
+                <div style="text-align:center; padding:20px; font-size:11px; color:#A0AEC0;">Syncing tasks...</div>
+            </div>
+            <button id="open-selected-btn" class="btn-pill btn-dark" style="display:none">🔥 Launch Session</button>
         </div>
-        <button id="open-selected-btn" class="btn-pill btn-dark" style="display:none">🔥 Launch Session</button>
     </div>
 
-    <div class="section">
-        <div class="section-title">Bulk Pipeline</div>
-        <textarea id="urlsInput" placeholder="Paste job URLs (LinkedIn, Workday...)"></textarea>
-        <button id="openTabsBtn" class="btn-pill btn-outline">Process Batch</button>
+    <!-- RESUME BUILDER MODE -->
+    <div id="mode-resume" style="display: none;">
+        <div class="section" style="border: 2px solid var(--accent); background: #FFF5F0;">
+            <div class="section-title">Resume Booster 🚀</div>
+            <div id="jd-status" style="font-size:11px; margin-bottom:8px; color:var(--text-secondary)">Scan any page to extract requirements...</div>
+            <button id="scan-jd-btn" class="btn-pill btn-dark">🔍 Scan Page for JD</button>
+            
+            <div id="keyword-section" style="display:none; margin-top:12px;">
+                <div class="section-title" style="font-size:9px">Target Keywords</div>
+                <div id="keyword-list" style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:12px;"></div>
+                <button id="optimize-resume-btn" class="btn-pill btn-orange">✨ Boost My Resume</button>
+            </div>
+
+            <div id="download-section" style="display:none; margin-top:12px;">
+                <div style="font-size:11px; font-weight:700; color:#10b981; text-align:center; margin-bottom:8px;">✅ Resume Optimized!</div>
+                <button id="download-pdf-btn" class="btn-pill btn-outline">📥 Download PDF</button>
+            </div>
+        </div>
     </div>
 
     <div id="statusMsg"

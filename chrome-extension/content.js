@@ -398,9 +398,9 @@ function getLabel(el) {
     }
 
     // 5. Parent container heading (Common in Google Forms / complex React apps / Microsoft Forms)
-    const container = el.closest('[role="listitem"], [class*="item"], fieldset, [class*="question"], [data-automation-id="questionItem"], .office-form-question');
+    const container = el.closest('[role="listitem"], [class*="item"], fieldset, [class*="question"], [data-automation-id="questionItem"], .office-form-question, .Qr7Oae');
     if (container) {
-        const heading = container.querySelector('[role="heading"], [class*="title"], [class*="label"], strong, b, span.text-format-content, [data-automation-id="questionTitle"]');
+        const heading = container.querySelector('[role="heading"], [class*="title"], [class*="label"], strong, b, span.text-format-content, [data-automation-id="questionTitle"], .M7e69c');
         if (heading) return heading.textContent.trim();
     }
 
@@ -486,15 +486,35 @@ function showStatusBadge(msg) {
     setTimeout(() => b.remove(), 4000);
 }
 
-// Auto-run on load
-if (document.readyState === 'complete') analyzePageAndProceed();
-else window.addEventListener('load', analyzePageAndProceed);
-
-// Listen for manual trigger
+// Auto-run has been disabled. The extension now waits for manual triggers from the popup.
 chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     if (req.action === 'manual_fill') {
         hasRunPass = false;
         analyzePageAndProceed();
         sendResponse({ status: 'started' });
+    }
+    
+    if (req.action === 'extract_jd') {
+        // Extraction logic for modern ATS
+        const containers = [
+            '.job-description', '#job-description', '[class*="description"]', 
+            '.posting-description', '.job-detail', '.description__text', 
+            '.jd-description', '[id*="jobDesc"]', '.jobs-description-content',
+            '[class*="JobDescription"]', 'article', 'main'
+        ];
+        
+        let jdText = "";
+        for (const sel of containers) {
+            const el = document.querySelector(sel);
+            if (el && el.innerText.length > 300) {
+                jdText = el.innerText;
+                break;
+            }
+        }
+        
+        // Fallback: Use longest body text if no container found
+        if (!jdText) jdText = document.body.innerText.substring(0, 10000);
+        
+        sendResponse({ jdText: jdText.substring(0, 15000) });
     }
 });

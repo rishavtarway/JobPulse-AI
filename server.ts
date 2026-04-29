@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import os from 'os';
 import dns from 'node:dns';
 
@@ -44,6 +44,7 @@ app.use(express.json());
 app.use(express.static(path.join(process.cwd(), 'public')));
 
 let isRunning = false;
+let isFollowUpRunning = false;
 let currentLogs: string[] = [];
 let pendingOtpResolve: ((code: string) => void) | null = null;
 let pendingPasswordResolve: ((pw: string) => void) | null = null;
@@ -64,23 +65,30 @@ function flexibleParseDate(dateStr: string): number {
     let d = new Date(dateStr);
     if (!isNaN(d.getTime())) return d.getTime();
 
-    // Try parsing "13/3/2026, 11:51:14 pm" (D/M/YYYY)
+    // Handle "25/03/2026, 11:51:14 am" (D/M/YYYY)
     const match = dateStr.match(/(\d+)\/(\d+)\/(\d+)(?:,?\s+(.*))?/);
     if (match) {
-        const day = parseInt(match[1]);
-        const month = parseInt(match[2]) - 1;
-        const year = parseInt(match[3]);
-        const timePart = match[4];
+        let day = parseInt(match[1]);
+        let month = parseInt(match[2]) - 1;
+        let year = parseInt(match[3]);
+        let timePart = match[4];
         
+        let h = 0, m = 0, s = 0;
         if (timePart) {
-            // Very simple AM/PM check
-            let [hms, ampm] = timePart.split(/\s+/);
-            let [h, m, s] = (hms || '0:0:0').split(':').map(x => parseInt(x) || 0);
-            if (ampm && ampm.toLowerCase() === 'pm' && h < 12) h += 12;
-            if (ampm && ampm.toLowerCase() === 'am' && h === 12) h = 0;
-            return new Date(year, month, day, h, m, s).getTime();
+            // Check for am/pm or a.m./p.m.
+            const ampmMatch = timePart.match(/([ap])\.?m\.?/i);
+            const isPM = ampmMatch && ampmMatch[1].toLowerCase() === 'p';
+            
+            const hmsMatch = timePart.match(/(\d+):(\d+)(?::(\d+))?/);
+            if (hmsMatch) {
+                h = parseInt(hmsMatch[1]);
+                m = parseInt(hmsMatch[2]);
+                s = parseInt(hmsMatch[3] || '0');
+                if (isPM && h < 12) h += 12;
+                if (!isPM && h === 12) h = 0;
+            }
         }
-        return new Date(year, month, day).getTime();
+        return new Date(year, month, day, h, m, s).getTime();
     }
     return 0;
 }
@@ -293,8 +301,8 @@ app.get('/api/manual-jobs', (req, res) => {
     });
 
     combined.sort((a: any, b: any) => {
-        const timeA = a._timestamp || new Date(a.appliedDate).getTime() || 0;
-        const timeB = b._timestamp || new Date(b.appliedDate).getTime() || 0;
+        const timeA = a._timestamp || (a.appliedDate ? new Date(a.appliedDate).getTime() : 0);
+        const timeB = b._timestamp || (b.appliedDate ? new Date(b.appliedDate).getTime() : 0);
         return timeB - timeA;
     });
 
@@ -307,7 +315,12 @@ app.get('/api/applications', (req, res) => {
 });
 
 app.post('/api/applications', (req, res) => {
-    const { company, role, email, link, description, status = 'applied', telegramId, channel, type = 'telegram' } = req.body;
+    const { 
+        company, role, email, link, description, 
+        jobDescription,
+        status = 'applied', telegramId, channel, 
+        type = 'telegram', appliedDate, _timestamp 
+    } = req.body;
     if (!company) return res.status(400).json({ error: 'Company is required' });
 
     const apps = readApps();
@@ -320,9 +333,12 @@ app.post('/api/applications', (req, res) => {
         email: email || '',
         link: link || '',
         description: description || '',
-        appliedDate: new Date().toISOString(),
-        status, // applied, intro_call, technical_round, hr_round, offered, rejected, no_response, to_apply
-        type, // telegram, yc
+        jobDescription: jobDescription || '',
+        appliedDate: appliedDate || new Date().toISOString(),
+        postedDate: req.body.postedDate || null,
+        _timestamp: _timestamp || Date.now(),
+        status, 
+        type, 
         notes: ''
     };
 
@@ -359,38 +375,66 @@ let currentChildProcess: any = null;
 
 app.post('/api/stop', (req, res) => {
     if (currentChildProcess) {
+        // Kill process group if possible
+        if (process.platform !== 'win32') {
+            try {
+                // Kill processes named 'auto_apply.ts'
+                execSync('pkill -f "auto_apply.ts"');
+                // Kill processes holding a lock on td.binlog
+                execSync('lsof -t /Users/tarway/Documents/JobPulse-AI/session/td.binlog | xargs kill -9');
+            } catch (e) {
+                console.error('Error during pkill/lsof cleanup:', e);
+            }
+        }
         currentChildProcess.kill('SIGINT'); // Try nice kill first
         setTimeout(() => {
-            if (isRunning) {
+            if (currentChildProcess) { // Check if it's still running after SIGINT
                 currentChildProcess.kill('SIGKILL');
-                isRunning = false;
-                currentLogs.push('\n🛑 Process FORCE TERMINATED by user.\n');
             }
-        }, 1000);
-        res.json({ message: 'Stop signal sent' });
+            // Clean up state regardless of how it was killed
+            isRunning = false;
+            otpRequired = false;
+            passwordRequired = false;
+            pendingOtpResolve = null;
+            pendingPasswordResolve = null;
+            currentChildProcess = null;
+            currentLogs.push('\n🛑 Process TERMINATED by user.\n');
+        }, 2000); // Give it 2 seconds to respond to SIGINT
+        res.json({ success: true, message: 'Process termination command broadcasted.' });
     } else {
         res.status(400).json({ error: 'No process is running' });
     }
 });
 
-app.post('/api/trigger', (req, res) => {
+app.post('/api/trigger', async (req, res) => {
     if (isRunning) {
-        return res.status(400).json({ error: 'Process is already running' });
+        return res.json({ success: false, message: 'Process already in flight.' });
+    }
+
+    // 🛡️ Lock-file Protection: Forcefully clear any lingering discovery processes
+    try {
+        console.log('🧹 Cleaning up stale discovery instances and session locks...');
+        // Kill by process name/pattern to catch orphaned node/tsx instances
+        if (process.platform === 'darwin' || process.platform === 'linux') {
+            try { execSync('pkill -f "auto_apply.ts"'); } catch (e) { } 
+            // Also try to unlock the file specifically
+            try { execSync('lsof -t /Users/tarway/Documents/JobPulse-AI/session/td.binlog | xargs kill -9'); } catch (e) { }
+        }
+    } catch (e) {
+        console.error('⚠️ Cleanup error:', e);
     }
 
     isRunning = true;
-    currentLogs = [];
+    currentLogs = [`🚀 Discovery Agent Initiated internally at ${new Date().toLocaleString()}\n`];
     otpRequired = false;
     passwordRequired = false;
     pendingOtpResolve = null;
     pendingPasswordResolve = null;
 
-    currentLogs.push('🚀 Starting Auto-Apply process...\n');
-
-    // Spawn the child process with BROWSER_MODE so it knows to use the web OTP endpoint
     currentChildProcess = spawn('npx', ['tsx', 'auto_apply.ts'], {
+        cwd: process.cwd(),
         env: { ...process.env, BROWSER_MODE: '1', SERVER_PORT: String(PORT) },
-        cwd: process.cwd()
+        shell: true
     });
 
     // Use line-buffering for cleaner output
@@ -474,6 +518,51 @@ app.post('/api/trigger-yc', (req, res) => {
     });
 
     res.json({ message: 'YC Process started' });
+});
+
+// ============================================================
+// API: Follow-up Draft Generator
+// ============================================================
+app.post('/api/send-followups', (req, res) => {
+    if (isFollowUpRunning) return res.status(400).json({ error: 'Follow-up process already running. Please wait.' });
+
+    isFollowUpRunning = true;
+    // Append to existing logs instead of replacing, so terminal shows content
+    currentLogs.push(`\n🔄 Follow-up Draft Generator Initiated at ${new Date().toLocaleString()}\n`);
+    isRunning = true;
+
+    const child = spawn('npx', ['tsx', 'scripts/send_followups.ts'], {
+        cwd: process.cwd(),
+        env: { ...process.env },
+        shell: true
+    });
+
+    let stdoutBuffer = '';
+    child.stdout?.on('data', (data: Buffer) => {
+        stdoutBuffer += data.toString();
+        const lines = stdoutBuffer.split('\n');
+        stdoutBuffer = lines.pop() || '';
+        lines.forEach((line: string) => { if (line) currentLogs.push(line + '\n'); });
+    });
+
+    child.stderr?.on('data', (data: Buffer) => {
+        currentLogs.push(data.toString());
+    });
+
+    child.on('close', (code: number | null) => {
+        if (stdoutBuffer) currentLogs.push(stdoutBuffer + '\n');
+        currentLogs.push(`\n✅ Follow-up process finished with exit code ${code}\n`);
+        isFollowUpRunning = false;
+        isRunning = false;
+    });
+
+    child.on('error', (err: Error) => {
+        currentLogs.push(`\n❌ Failed to start follow-up process: ${err.message}\n`);
+        isFollowUpRunning = false;
+        isRunning = false;
+    });
+
+    res.json({ message: 'Follow-up process started' });
 });
 
 // ============================================================

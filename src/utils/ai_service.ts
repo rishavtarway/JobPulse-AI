@@ -15,8 +15,8 @@ export async function callAI(prompt: string, expectJson: boolean = false): Promi
         { provider: 'nvidia', id: 'meta/llama-3.1-70b-instruct' },
         { provider: 'nvidia', id: 'meta/llama-3.1-405b-instruct' },
         { provider: 'openrouter', id: 'google/gemini-2.0-flash-lite-001' },
-        { provider: 'openrouter', id: 'meta-llama/llama-3.2-3b-instruct:free' },
-        { provider: 'openrouter', id: 'openrouter/free' }
+        { provider: 'openrouter', id: 'google/gemini-2.0-pro-exp-02-05:free' },
+        { provider: 'openrouter', id: 'google/gemini-2.0-flash-thinking-exp:free' }
     ];
 
     let currentIdx = 0;
@@ -64,6 +64,12 @@ export async function callAI(prompt: string, expectJson: boolean = false): Promi
             }
 
             const result = await (response.json() as any);
+            
+            if (!result.choices || result.choices.length === 0) {
+              console.log(`   ⚠️ Unexpected AI response format from ${target.id}: ${JSON.stringify(result)}`);
+              continue;
+            }
+
             const text = result.choices[0].message.content;
 
             if (!expectJson) return text;

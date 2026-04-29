@@ -1,0 +1,85 @@
+\documentclass{resume} % Use the custom resume.cls style
+
+\usepackage[left=0.4 in,top=0.4in,right=0.4 in,bottom=0.4in]{geometry} % Document margins
+\newcommand{\tab}[1]{\hspace{.2667\textwidth}\rlap{#1}} 
+\newcommand{\itab}[1]{\hspace{0em}\rlap{#1}}
+\usepackage{hyperref}
+\hypersetup{colorlinks=false, hidelinks}
+
+\name{Rishav Tarway} % Your name
+\address{+91 70045 44142 \\ Gurugram, Haryana, India} 
+\address{\href{mailto:rishavtarway@gmail.com}{rishavtarway@gmail.com} \\ \href{https://linkedin.com/in/rishav-tarway-fst}{linkedin.com/in/rishav-tarway-fst} \\ \href{https://my-portfolio-five-roan-36.vercel.app/}{my-portfolio-five-roan-36.vercel.app}}
+
+\begin{document}
+
+%----------------------------------------------------------------------------------------
+%	OBJECTIVE
+%----------------------------------------------------------------------------------------
+
+\begin{rSection}{OBJECTIVE}
+{Software Engineer with a focus on AI/ML and Identity Systems, seeking roles that leverage my experience in building large-scale backend architectures and automated testing frameworks.}
+\end{rSection}
+
+%----------------------------------------------------------------------------------------
+%	EDUCATION SECTION
+%----------------------------------------------------------------------------------------
+
+\begin{rSection}{Education}
+{\bf Bachelors of Technology}, Polaris School of Technology \hfill {2023 - 2027}\\
+Specialization: Computer Science \& Engineering (Artificial Intelligence \& Machine Learning) \hfill {8.49 CGPA}
+\end{rSection}
+
+%----------------------------------------------------------------------------------------
+% TECHINICAL STRENGTHS	
+%----------------------------------------------------------------------------------------
+\begin{rSection}{SKILLS}
+\begin{tabular}{ @{} >{\bfseries}l @{\hspace{6ex}} l }
+Technical Skills & Python, Java, C++, JavaScript, TypeScript, SQL, React, Node.js \\
+Tools & Docker, AWS, GCP, Git, Selenium, Cucumber, MongoDB, PostgreSQL \\
+AI/ML & LLMs, RAG, Prompt Engineering, Computer Vision, OCR \\
+\end{tabular}
+\end{rSection}
+
+%----------------------------------------------------------------------------------------
+%	EXPERIENCE SECTION
+%----------------------------------------------------------------------------------------
+\begin{rSection}{EXPERIENCE}
+\begin{rSubsection}{IIIT Bangalore – MOSIP}{Jul 2025 – Oct 2025}{Research Software Engineer Intern}{Bangalore, India (Remote)}
+\item \textbf{Automated multilingual navigation and eSignet IDP verification} (PR \#1370) and fixed critical auto-logout bug during background sync (PR \#543) for MOSIP government identity systems using Selenium + Java + Cucumber BDD test suites.
+\end{rSubsection}
+
+\begin{rSubsection}{Classplus}{Nov 2024 – Jan 2025}{Software Engineer Intern}{Gurugram, India}
+\item \textbf{Improved backend monitoring by 40\%} via unique request IDs and Express.js middleware, and enhanced error tracking using async-local-storage, reducing API response time by 25\% for 10,000+ concurrent users.
+\end{rSubsection}
+
+\begin{rSubsection}{TechVastra}{Sep 2024 – Nov 2024}{Full Stack Developer Intern}{Remote}
+\item \textbf{Built responsive Next.js + TypeScript application} integrated with Android, enhancing performance by 30\% via React Hooks optimisation, and designed RESTful APIs handling 10,000+ user data sync requests.
+\end{rSubsection}
+
+\begin{rSubsection}{Testbook}{Sep 2024 – Nov 2024}{QA Automation Intern}{Remote}
+\item \textbf{Built Selenium + ChromeDriver framework 50\% faster} than existing tests, developed test cases uncovering 30+ critical bugs before production, and automated regression testing saving 10+ hours per sprint.
+\end{rSubsection}
+
+\begin{rSubsection}{Franchizerz}{Jul 2024 – Dec 2024}{Frontend Developer Intern}{Remote}
+\item \textbf{Designed UI with React + Next.js + REST APIs}, boosting Lighthouse performance score from 68 to 92 via code-splitting and lazy loading, and improving page load time by 35\% for 5,000+ active users.
+\end{rSubsection}
+\end{rSection} 
+
+%----------------------------------------------------------------------------------------
+%	PROJECTS SECTION
+%----------------------------------------------------------------------------------------
+\begin{rSection}{PROJECTS}
+\item \textbf{Tech Stream Community.} Real-time social platform for tech enthusiasts built with React, Socket.io, MongoDB, Node.js, and AWS, handling 500+ concurrent users, 99.9\% uptime, <100ms message latency, and integrated live analytics with Chart.js and Redis caching.
+\item \textbf{Scholar Track App.} Multi-user academic tracking application with grade, attendance, and reporting features built with Java and SQL, and a Dockerized one-command deployment pipeline.
+\item \textbf{AI Resume Generator.} AI-powered resume generator integrating GPT-4 to create customized resumes from job descriptions, built with Python, GPT-4, React, and FastAPI, and won 1st Runner-Up at Hack With Uttarakhand (Team Code Heist).
+\end{rSection} 
+
+%----------------------------------------------------------------------------------------
+\begin{rSection}{Extra-Curricular Activities} 
+\begin{itemize}
+    \item 	Actively contribute to \href{https://wiggly-cyclone-4b3.notion.site/Open-Source-Contributions-196c5ae56b3480ffa68cce470f9fd6cc}{Open Source projects} focusing on security and system automation.
+    \item	Participated in various hackathons and technical workshops focused on Generative AI.
+\end{itemize}
+\end{rSection}
+
+\end{document}

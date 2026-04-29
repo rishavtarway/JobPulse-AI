@@ -17,8 +17,18 @@ const PORT = 3001;
 
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization'] }));
 app.use(express.json({ limit: '50mb' }));
+app.use(express.static('public'));
 
 // ─────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────
+function safeSlice(text: string, length: number): string {
+    if (!text) return "";
+    const chars = Array.from(text);
+    if (chars.length <= length) return text;
+    return chars.slice(0, length).join('');
+}
+
 // Load resume data (always fresh from disk)
 // ─────────────────────────────────────────────────────────────────
 const resumeDataPath = path.join(process.cwd(), 'resume_data.json');
@@ -39,48 +49,86 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
 // ── LLM WRAPPER ──────────────────────────────────────────────────
 async function callAI(messages: any[], temperature = 0.1) {
-    if (!OPENROUTER_API_KEY) {
-        console.warn('⚠️ No OpenRouter API Key. Skipping LLM.');
+    const nvidiaKey = process.env.NVIDIA_API_KEY;
+    const openrouterKey = process.env.OPENROUTER_API_KEY;
+
+    if (!nvidiaKey && !openrouterKey) {
+        console.warn('⚠️ No AI API Keys found (NVIDIA or OpenRouter). Skipping LLM.');
         return 'UNKNOWN';
     }
 
-    const fallbackModels = ["openrouter/free", "google/gemma-3-27b-it:free", "mistralai/mistral-7b-instruct:free", "meta-llama/llama-3.2-1b-instruct:free"];
-    let currentModelIdx = 0;
+    const providers = [];
+    if (openrouterKey) {
+        providers.push({
+            name: 'openrouter',
+            key: openrouterKey,
+            models: [
+                "google/gemini-2.0-flash-lite-001",
+                "google/gemini-2.0-pro-exp-02-05:free",
+                "google/gemma-2-9b-it:free"
+            ],
+            endpoint: "https://openrouter.ai/api/v1/chat/completions"
+        });
+    }
+    if (nvidiaKey) {
+        providers.push({
+            name: 'nvidia',
+            key: nvidiaKey,
+            models: [
+                "meta/llama-3.1-70b-instruct",
+                "meta/llama-3.1-405b-instruct"
+            ],
+            endpoint: "https://integrate.api.nvidia.com/v1/chat/completions"
+        });
+    }
+
     const prompt = messages.map(m => m.content).join('\n\n---\n\n');
 
-    while (currentModelIdx < fallbackModels.length) {
-        try {
-            console.log(`🤖 AI: Using OpenRouter API (${fallbackModels[currentModelIdx]})`);
-            const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-                method: "POST",
-                headers: {
-                    "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "http://localhost:3000",
-                    "X-OpenRouter-Title": "Auto Apply Bot Form Filler"
-                },
-                body: JSON.stringify({
-                    model: fallbackModels[currentModelIdx],
-                    messages: [{ role: "user", content: prompt }]
-                })
-            });
+    for (const provider of providers) {
+        for (const modelName of provider.models) {
+            try {
+                console.log(`🤖 AI Attempt: Using ${provider.name}:${modelName}...`);
+                const response = await fetch(provider.endpoint, {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${provider.key}`,
+                        "Content-Type": "application/json",
+                        ...(provider.name === 'openrouter' ? {
+                            "HTTP-Referer": "http://localhost:3000",
+                            "X-OpenRouter-Title": "JobPulse AI Optimizer"
+                        } : {})
+                    },
+                    body: JSON.stringify({
+                        model: modelName,
+                        messages: [{ role: "user", content: prompt }],
+                        // Keep it simple to avoid 400s
+                    })
+                });
 
-            if (response.status === 429 || response.status === 402) {
-                console.log(`   ⏳ Model ${fallbackModels[currentModelIdx]} rate-limited (${response.status}). Switching model...`);
-                currentModelIdx++;
-                continue;
+                const data: any = await response.json();
+
+                if (response.status === 401 || (data.error && data.error.code === 401) || (typeof data.error?.message === 'string' && data.error.message.includes('User not found'))) {
+                    console.log(`   ❌ Auth Error on ${provider.name}. Skipping provider.`);
+                    break; // Skip to next provider
+                }
+
+                if (response.status === 429 || response.status === 402 || response.status === 503) {
+                    console.log(`   ⏳ Rate limit on ${modelName}. Switching...`);
+                    continue;
+                }
+
+                if (!response.ok) {
+                    throw new Error(`Status ${response.status} - ${JSON.stringify(data.error || data)}`);
+                }
+
+                const content = data.choices?.[0]?.message?.content?.trim();
+                if (content) return content;
+                
+                throw new Error("Empty response from model");
+            } catch (e: any) {
+                console.error(`   ❌ Model ${modelName} failed:`, e.message);
+                // Continue to next model
             }
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Status ${response.status} - ${errorText}`);
-            }
-
-            const data = await response.json();
-            return data.choices[0].message.content.trim() || 'UNKNOWN';
-        } catch (e: any) {
-            console.error('[OpenRouter API Error]:', e.message);
-            currentModelIdx++;
         }
     }
 
@@ -104,19 +152,49 @@ async function askLLM(
         return 'UNKNOWN_DATA';
     }
 
-    const sysPrompt = `You are a high-fidelity Form Filler for Rishav Tarway.
-Rishav's Full Resume Data: ${JSON.stringify(resumeData)}
+    const sysPrompt = `You are filling job application forms on behalf of Rishav Tarway. You know everything about him from his resume below.
 
-Goal: Given a form field, return ONLY the best answer based on the resume. 
-Rules:
-1. Return JUST the value. No explanation. No quotes. No prefix.
-2. If it is a dropdown or radio list, you MUST return EXACTLY ONE of the listed options (copy character-for-character).
-3. For binary (YES/NO) questions, if the answer is clear from the resume, return "YES" or "NO" or pick the exact corresponding option if provided.
-4. IMPORTANT: Fields asking for 'College Name' or 'University Name' should receive the institution name, NOT the user's name (Rishav Tarway).
-5. For date fields, return YYYY-MM-DD format OR the readable date (e.g. March 2026) based on the field type.
-6. For textarea/long form questions, write at least 2 sentences with specific details from Rishav's background. If the question is about why you want to join the company, write about how the company's work aligns with Rishav's background in AI/ML and identity systems. 
-7. If you genuinely cannot answer from the resume (e.g. personal status questions like 'Are you a fellow?', 'How did you hear about us?'), return exactly: UNKNOWN_DATA
-8. NEVER make up facts. For YES/NO questions, only answer if the resume provides context, else return UNKNOWN_DATA.`;
+RISHAV'S COMPLETE PROFILE:
+- Name: Rishav Tarway | Email: rishavtarway@gmail.com | Phone: +91-7004544142 | Location: Gurugram, Haryana, India
+- Education: B.Tech CSE (AI & ML), Polaris School of Technology (Starex University), CGPA 8.85, 2023-2027, Gurugram
+- Total Experience: 19 months across 5 internships
+- Internships:
+  1. Research SWE Intern at IIIT Bangalore (MOSIP), Jul-Oct 2025 - Selenium, Java, Cucumber BDD for national biometric identity systems. PR #1370 automated multilingual UI and eSignet IDP verification. PR #543 fixed auto-logout bug during background sync.
+  2. Software Engineer Intern at Classplus, Nov 2024-Jan 2025 - Improved observability 40% via unique request ID tracing across Express.js middleware. Reduced API latency 25% for 10k+ concurrent users.
+  3. Full Stack Developer Intern at TechVastra, Sep-Nov 2024 - Next.js + TypeScript with Android integration. Boosted frontend performance 30% via React Hooks refactoring. RESTful APIs for 10k+ concurrent sync operations.
+  4. QA Automation Intern at Testbook, Sep-Nov 2024 - Selenium + ChromeDriver framework 50% faster. Uncovered 30+ critical bugs.
+  5. Frontend Developer Intern at Franchizerz, Jul-Dec 2024 - React + Next.js UI. Lighthouse score from 68 to 92 via code-splitting and lazy loading.
+- Skills: Java, C++, JavaScript, TypeScript, Python, Go | React, Next.js, Node.js, Express, Redux, Socket.io | React Native, Expo SDK 51 | MongoDB, SQL, Redis, Supabase, AWS (S3, CloudFront) | Git, Docker, Selenium, Cucumber BDD, OSS-Fuzz, ASAN | Gemini API, GPT, Zustand | OOP, DSA, System Design, ML, Fuzz Testing
+- Projects: Tech Stream Community (React, Socket.io, MongoDB, AWS, Redis - 500+ users, 99.9% uptime), CoinWatch (React Native, Expo, Supabase, CoinGecko API - 60fps crypto tracker), ProResume (React Native, Gemini AI, Supabase - ATS optimised resume builder with Kanban job tracker), Scholar Track App (Java, SQL, Docker - 60% query boost).
+- Open Source / Achievements: WoC 5.0 at OpenPrinting (go-avahi) - built full OSS-Fuzz infrastructure, 11 fuzz harnesses, found and fixed CWE-401 (16MB memory leak) and CWE-122 (heap buffer overflow); 3 Merged PRs in Stdlib.js; 2 Merged PRs in OpenPrinting; 1st Runner-Up Hack With Uttarakhand.
+- LinkedIn: https://www.linkedin.com/in/rishav-tarway-fst/ | GitHub: https://github.com/rishavtarway | Portfolio: https://my-portfolio-five-roan-36.vercel.app/
+
+RULES FOR SHORT FIELDS (name, email, phone, dropdown, radio, date, number):
+1. Return ONLY the exact value. No explanation, no quotes, no extra words.
+2. For dropdowns/radio, pick EXACTLY one of the listed options (copy it character for character).
+3. For college/university fields return: Polaris School of Technology (Starex University)
+4. For CGPA return: 8.85
+5. For date fields return YYYY-MM-DD or readable date based on what makes sense.
+6. If genuinely unknown (e.g. "How did you hear about us?"), return: UNKNOWN_DATA
+
+RULES FOR LONG-FORM / TEXTAREA FIELDS (cover letter, motivation, about yourself, why this role, etc.):
+Write EXACTLY 3 paragraphs. Each paragraph is 1 to 2 sentences MAXIMUM.
+STRICT FORMAT REQUIREMENTS:
+- NO quotation marks anywhere in the text
+- NO double dashes (--) between words. Use a comma or a full stop instead.
+- NO AI-sounding phrases like "I am passionate", "I am excited to", "leverage my skills", "synergize", "dynamic", "thrilled"
+- NO em dashes used to separate phrases; use commas instead
+- Write like a confident, precise engineer, not a motivational speaker
+- Use specific numbers and technologies from the resume, not vague claims
+- Each paragraph must feel like a different human wrote it naturally, not like a template
+
+PARAGRAPH STRUCTURE for long-form:
+- Para 1 (1-2 sentences): Directly address the question using your most relevant experience or project. Name the specific company/technology/outcome.
+- Para 2 (1-2 sentences): Show depth by referencing a second relevant experience, open source work, or technical achievement with a real metric.
+- Para 3 (1-2 sentences): Close with what you bring to the specific role or team, grounded in a concrete skill or project outcome.
+
+NEVER make up facts not in the resume. If the question is completely unrelated to the resume (e.g. personal preferences, fun facts), return UNKNOWN_DATA.`;
+
 
     const userPrompt = `
 Field Label: "${fieldLabel}"
@@ -161,7 +239,7 @@ app.get('/api/form-filler/resume', (req, res) => {
     // Try configured path first, then common locations
     const candidates = [
         data.resume_local_path,
-        path.join(process.cwd(), 'RishavTarway-Resume .pdf'),
+        path.join(process.cwd(), 'RishavTarway-Resume.pdf'),
         path.join(process.cwd(), 'RishavTarway-Resume.pdf'),
         path.join(process.cwd(), 'resume.pdf'),
     ].filter(Boolean);
@@ -223,39 +301,183 @@ app.post('/api/form-filler/save-learned', (req, res) => {
     res.json({ success: true });
 });
 
-// POST /api/form-filler/analyze-page — AI decides what button to click or action to take
-app.post('/api/form-filler/analyze-page', async (req, res) => {
-    const { pageText, buttons, tabUrl, inputsFound, topInputs } = req.body;
-    if (!pageText) return res.status(400).json({ action: 'UNKNOWN' });
+// ─────────────────────────────────────────────────────────────────
+// RESUME BOOSTER ENDPOINTS
+// ─────────────────────────────────────────────────────────────────
 
-    console.log(`\n🔍 [Page Analysis] ${tabUrl}`);
-    console.log(`   Real Inputs: ${inputsFound}, Buttons: ${buttons?.length || 0}`);
+// POST /api/resume/analyze-jd — Extract keywords from JD
+app.post('/api/resume/analyze-jd', async (req, res) => {
+    const { jdText } = req.body;
+    if (!jdText) return res.status(400).json({ error: 'No JD text provided' });
 
-    if (!OPENROUTER_API_KEY) return res.json({ action: 'UNKNOWN' });
+    console.log(`\n🔍 [JD Analysis] Scanning for keywords...`);
+    const prompt = `Act as an expert ATS (Applicant Tracking System) optimizer. 
+Analyze the following Job Description and extract the top 15 most important technical keywords, soft skills, and specific requirements. 
+Return ONLY a raw JSON array of strings. NO MARKDOWN. NO EXPLANATION. Just the array.
+Example: ["Node.js", "React"]
 
-    const prompt = `You are navigating a job portal for Rishav Tarway.
-Current URL: ${tabUrl}
-Inputs visible: ${topInputs || 'None'}
-Buttons available: ${JSON.stringify(buttons)}
-
-DECISION RULES:
-1. If this is a Job Description page and there is an "Apply", "Apply Now", "Register" button, return that exact button text.
-2. If this is a Login or Account Creation page, return the EXACT text of the social login button (e.g. "Sign in with Google", "Sign in with LinkedIn"). If only email/password, return: SIGN_UP.
-3. If this is already the Application Form (asking for Name, Email, Resume, etc.), return exactly: IS_FORM.
-4. If there is a "Continue", "Next", or "Apply with LinkedIn" button on a non-form page, return that text.
-5. Otherwise: UNKNOWN.
-
-Output ONLY the decision.`;
+JD Text: 
+${safeSlice(jdText, 2000)}`;
 
     try {
-        const action = await callAI([
-            { role: 'user', content: prompt }
-        ]);
-        console.log(`   🎯 AI Decision: ${action}`);
-        res.json({ action });
-    } catch (e) {
-        console.error('[Analysis Error]:', (e as Error).message);
-        res.json({ action: 'UNKNOWN' });
+        const result = await callAI([{ role: 'user', content: prompt }]);
+        // Extract array from possible markdown blocks
+        let keywords: string[] = [];
+        
+        try {
+            const startIdx = result.indexOf('[');
+            const endIdx = result.lastIndexOf(']');
+            if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+                const arrayStr = result.substring(startIdx, endIdx + 1);
+                keywords = JSON.parse(arrayStr);
+            } else {
+                throw new Error("No array brackets found in AI output");
+            }
+        } catch(e) {
+            console.log("JSON Parse fallback triggered:", result);
+            // Emergency fallback splitting, removing extra markdown/quotes
+            keywords = result
+                .replace(/```json/gi, '')
+                .replace(/```/g, '')
+                .replace(/[\[\]"'\n]/g, ',')
+                .split(',')
+                .map((s: string) => s.trim())
+                .filter((s: string) => s.length > 2 && s.toUpperCase() !== 'UNKNOWN')
+                .slice(0, 15);
+        }
+
+        if (keywords.length === 0) {
+            keywords = ["Engineering", "Backend", "Frontend", "System Design", "Agile"]; // Hard failsafe
+        }
+
+        res.json({ keywords });
+    } catch (e: any) {
+        console.error("Analyze JD Error:", e.message);
+        res.status(500).json({ error: 'Failed to analyze JD' });
+    }
+});
+
+// POST /api/resume/optimize — AI optimizes resume for JD (Generates LaTeX)
+app.post('/api/resume/optimize', async (req, res) => {
+    const { jdText, selectedKeywords } = req.body;
+    const resumeData = loadResumeData();
+
+    console.log(`\n🚀 [Resume Optimization] Re-writing bullet points...`);
+    
+    const prompt = `Act as a senior career coach and LaTeX expert. 
+Given the Job Description below and Rishav Tarway's resume data, rewrite his "Experience" and "Projects" sections into LaTeX code for the FAANGPath resume template.
+
+FORMAT RULES:
+1. EXPERIENCE SECTION:
+   For each job, use the rSubsection environment:
+   \begin{rSubsection}{Company Name}{Date Range}{Role Name}{Location}
+      \item \textbf{High-impact bullet point} weaving in keywords and metrics.
+   \end{rSubsection}
+
+2. PROJECTS SECTION:
+   Use this format for EACH project item:
+   \item \textbf{Project Title.} {Project description including tech stack and impact. Use quantifiable metrics where possible.}
+
+3. KEYWORDS TO WEAVE IN: ${selectedKeywords.join(', ')}
+
+4. OUTPUT REQUIREMENTS:
+   - Provide the EXPERIENCE section first, followed by the PROJECTS section.
+   - Separate them with exactly: [SECTION_SEPARATOR]
+   - Use ONLY valid LaTeX. No markdown code blocks. No extra text.
+
+Resume Data: ${JSON.stringify(resumeData)}
+JD: ${safeSlice(jdText, 2500)}`;
+
+    try {
+        const result = await callAI([{ role: 'user', content: prompt }]);
+        
+        let exp = "";
+        let proj = "";
+        
+        // Try exact separator
+        if (result.includes('[SECTION_SEPARATOR]')) {
+            const parts = result.split('[SECTION_SEPARATOR]');
+            exp = parts[0] || "";
+            proj = parts[1] || "";
+        } 
+        // Fallback: models might use Markdown headers or just split naturally
+        else if (result.includes('PROJECTS')) {
+            const splitRegex = /(?:#+\s*PROJECTS|\*\*PROJECTS\*\*|PROJECTS\s*SECTION)/i;
+            const parts = result.split(splitRegex);
+            exp = parts[0] || "";
+            proj = parts[1] || "";
+        }
+        else {
+            console.error("AI did not separate sections properly. Raw output:", result);
+            // Put everything in exp as a last resort
+            exp = result;
+        }
+
+        // Strip any wrapping markdown code blocks the AI might aggressively wrap it in
+        exp = exp.replace(/```latex/ig, '').replace(/```/g, '').trim();
+        proj = proj.replace(/```latex/ig, '').replace(/```/g, '').trim();
+
+        res.json({ experience: exp, projects: proj });
+    } catch (e: any) {
+        console.log("Optimize Error Triggered:", e.message);
+        res.status(500).json({ error: 'Failed to optimize resume' });
+    }
+});
+
+// POST /api/resume/generate-pdf — Compile LaTeX to PDF via Tectonic
+app.post('/api/resume/generate-pdf', async (req, res) => {
+    const { experience, projects } = req.body;
+    
+    const templatePath = path.join(process.cwd(), 'resume_template.tex');
+    let template = fs.readFileSync(templatePath, 'utf-8');
+
+    // Robust Sanitize for LaTeX
+    const sanitizeLatex = (str) => {
+        return str
+            .replace(/(?<!\\)%/g, '\\%')
+            .replace(/(?<!\\)&/g, '\\&')
+            .replace(/(?<!\\)\$/g, '\\$')
+            .replace(/(?<!\\)_/g, '\\_')
+            .replace(/(?<!\\)#/g, '\\#');
+    };
+
+    const safeExp = sanitizeLatex(experience || '');
+    const safeProj = sanitizeLatex(projects || '');
+
+    // Simple placeholder replacement
+    const fullLatex = template
+        .replace('{{EXPERIENCE}}', safeExp)
+        .replace('{{PROJECTS}}', safeProj);
+
+    const tempTexPath = path.join(process.cwd(), 'temp_resume.tex');
+    const tempPdfPath = path.join(process.cwd(), 'temp_resume.pdf');
+    
+    fs.writeFileSync(tempTexPath, fullLatex);
+
+    console.log(`\n⚙️ [PDF Generation] Compiling with Tectonic...`);
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    const execPromise = promisify(exec);
+
+    try {
+        const homebrewPath = '/opt/homebrew/bin:/usr/local/bin:';
+        await execPromise(`tectonic ${tempTexPath}`, {
+            env: { ...process.env, PATH: homebrewPath + process.env.PATH }
+        });
+        const pdfBuffer = fs.readFileSync(tempPdfPath);
+        
+        // Save to public folder for direct access if needed
+        const publicPdfPath = path.join(process.cwd(), 'public', 'optimized_resume.pdf');
+        fs.writeFileSync(publicPdfPath, pdfBuffer);
+
+        res.json({ 
+            success: true, 
+            pdfUrl: '/optimized_resume.pdf',
+            latex: fullLatex 
+        });
+    } catch (e: any) {
+        console.error('❌ Tectonic Error:', e.message);
+        res.status(500).json({ error: 'LaTeX compilation failed: ' + e.message });
     }
 });
 

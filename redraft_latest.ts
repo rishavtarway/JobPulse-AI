@@ -37,7 +37,7 @@ const SIGNATURE_HTML = `
 <br><br>
 Yours sincerely<br><br>
 Rishav Tarway<br>
-<a href="https://drive.google.com/file/d/18y1yNOP-C7Mw8_Japfeb9ihsfNk6YiwH/view?usp=sharing">Resume</a> |
+<a href="https://drive.google.com/file/d/1q4jKjMioZf2FoY_IhuFYvlxjg_2WBRZ7/view?usp=sharing">Resume</a> |
 <a href="https://www.linkedin.com/in/rishav-tarway-fst/">LinkedIn</a> |
 <a href="https://github.com/rishavtarway">GitHub</a> |
 <a href="https://my-portfolio-five-roan-36.vercel.app/">Portfolio</a> |

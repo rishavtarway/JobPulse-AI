@@ -1,0 +1,5 @@
+2026/04/24-08:07:25.873 6df3ee Reusing MANIFEST /Users/tarway/Documents/JobPulse-AI/nas_chrome_profile/Default/IndexedDB/https_nas.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/04/24-08:07:25.873 6df3ee Recovering log #35
+2026/04/24-08:07:25.874 6df3ee Reusing old log /Users/tarway/Documents/JobPulse-AI/nas_chrome_profile/Default/IndexedDB/https_nas.com_0.indexeddb.leveldb/000035.log 
+2026/04/24-08:07:25.874 6df3ee Delete type=2 #33
+2026/04/24-08:07:25.887 6df401 Manual compaction at level-0 from '\x00\x0e\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x0f\x00\x00\x00' @ 0 : 0; will stop at (end)
