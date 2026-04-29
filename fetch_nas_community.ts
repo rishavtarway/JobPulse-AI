@@ -2,23 +2,25 @@
  * Automated nas.com community scraper for the
  * "TechUprise Insider Club" community.
  *
- * Strategy (v2 — dedup-only, no time cutoff, captures both timestamps):
+ * Strategy (v2.1 — last 12h window, oldest-first, dedup-aware):
  *
  *   1. Launch Puppeteer with the persistent profile under ./nas_chrome_profile
  *      so the user only logs in once (cookies persist across runs).
  *   2. Navigate to https://nas.com/techuprise-insider-club/community.
  *      If we land on Home, click the Community tab. Then wait for the Feed.
- *   3. Walk the feed TOP-DOWN (newest first). For every post card we extract
- *      a stable post key (canonical URL when clicking navigates, otherwise a
- *      sha1 of the headline + first 240 chars of the snippet — unaffected by
- *      the "Xh ago" relative-time label which would otherwise drift).
- *   4. The dedup gate uses BOTH:
+ *   3. Walk the feed and collect every post card with its relative-age label
+ *      ("45m ago" / "2h ago" / …). Keep only cards whose age is ≤ --max-age-hours
+ *      (default 12). Sort the survivors OLDEST-FIRST so the dashboard receives
+ *      rows in chronological order (oldest first, newest last).
+ *   4. Each post key is stable: a sha1 of the headline + first 240 chars of
+ *      the snippet — unaffected by the "Xh ago" label which would otherwise
+ *      drift between runs. The dedup gate uses BOTH:
  *         - nas_seen_posts.json  (this script's own log)
  *         - applications.json    (channel = "TechUprise NAS Community", via
  *                                 the dedupeId field stored in `telegramId`)
- *      As soon as we hit a card already present in either store, we STOP —
- *      everything below in the feed is older and already processed.
- *      We never re-AI a duplicate.
+ *      Cards already present in either store are SKIPPED (since we walk
+ *      oldest-first within a 12h window we don't break — we just continue).
+ *      A post is therefore never re-AI'd.
  *   5. For each new card: click into it (modal or URL-nav, both handled),
  *      scroll the post body fully, capture:
  *         - headline (bold post title)
@@ -35,10 +37,11 @@
  *      timestamps so the next run never reprocesses it.
  *
  * CLI:
- *   npx tsx fetch_nas_community.ts                  # process every new post
- *   npx tsx fetch_nas_community.ts --limit 5        # cap to N newest unseen
- *   npx tsx fetch_nas_community.ts --headless       # run without showing UI
- *   npx tsx fetch_nas_community.ts --login-timeout 600  # seconds
+ *   npx tsx fetch_nas_community.ts                       # last 12h, oldest-first
+ *   npx tsx fetch_nas_community.ts --limit 5             # cap to N posts
+ *   npx tsx fetch_nas_community.ts --headless            # run without showing UI
+ *   npx tsx fetch_nas_community.ts --login-timeout 600   # seconds (default 300)
+ *   npx tsx fetch_nas_community.ts --max-age-hours 24    # widen window
  */
 
 import fs from 'fs';
@@ -85,11 +88,18 @@ interface CliOptions {
   limit: number;
   headless: boolean;
   loginTimeoutMs: number;
+  /** Only consider posts whose age label is <= this many hours. */
+  maxAgeHours: number;
 }
 
 function parseArgs(): CliOptions {
   const args = process.argv.slice(2);
-  const options: CliOptions = { limit: 0, headless: false, loginTimeoutMs: 5 * 60 * 1000 };
+  const options: CliOptions = {
+    limit: 0,
+    headless: false,
+    loginTimeoutMs: 5 * 60 * 1000,
+    maxAgeHours: 12,
+  };
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--limit') {
@@ -99,6 +109,8 @@ function parseArgs(): CliOptions {
     } else if (args[i] === '--login-timeout') {
       // Default to 300s (5min) when value is missing or non-numeric.
       options.loginTimeoutMs = (Number(args[++i]) || 300) * 1000;
+    } else if (args[i] === '--max-age-hours') {
+      options.maxAgeHours = Number(args[++i]) || 12;
     }
   }
   return options;
@@ -168,7 +180,7 @@ function parseRelativeTime(label: string, reference: Date = new Date()): Date {
   const unit = match[2];
   let ms = 0;
   if (/^s/.test(unit)) ms = n * 1000;
-  else if (/^m(in|s)?$/.test(unit) || unit === 'minute' || unit === 'minutes') ms = n * 60_000;
+  else if (/^m(ins?)?$/.test(unit) || unit === 'minute' || unit === 'minutes') ms = n * 60_000;
   else if (/^h/.test(unit)) ms = n * 3_600_000;
   else if (/^d/.test(unit)) ms = n * 86_400_000;
   else if (/^w/.test(unit)) ms = n * 7 * 86_400_000;
@@ -422,21 +434,61 @@ async function ensureCommunityTab(page: Page): Promise<void> {
 }
 
 async function waitForLogin(page: Page, timeoutMs: number): Promise<boolean> {
+  // Multi-signal detection so we DON'T hang silently when the page is loaded
+  // but the dom regex is unhappy. Returns true the moment any positive signal
+  // is seen and there's no visible password input on the page.
   const start = Date.now();
+  let tick = 0;
   while (Date.now() - start < timeoutMs) {
     const state = await page.evaluate(() => {
-      const text = document.body.innerText.toLowerCase();
-      const hasLoginCta =
-        /\b(log\s*in|sign\s*in|sign\s*up|continue with google)\b/.test(text) &&
-        document.querySelectorAll('input[type="password"], input[type="email"]').length > 0;
-      const hasCommunityShell = /\b(community|feed)\b/i.test(document.body.innerText);
-      return { hasLoginCta, hasCommunityShell };
+      const tabLabels = Array.from(document.querySelectorAll<HTMLElement>('a, button, span, div'))
+        .map((el) => (el.innerText || '').trim().toLowerCase())
+        .filter(Boolean);
+      const hasCommunityTab = tabLabels.some((t) => t === 'community');
+      const hasFeedHeader = tabLabels.some((t) => t === 'feed' || t === 'popular products');
+      const hasPostCards = /TechUprise/i.test(document.body.innerText || '') &&
+        /Creator/i.test(document.body.innerText || '');
+      const hasPasswordInput = !!document.querySelector('input[type="password"]');
+      const hasGoogleLoginCta = /continue with google|sign in with google/i.test(
+        document.body.innerText || '',
+      );
+      const url = window.location.href;
+      const bodyLen = (document.body.innerText || '').length;
+      return {
+        hasCommunityTab,
+        hasFeedHeader,
+        hasPostCards,
+        hasPasswordInput,
+        hasGoogleLoginCta,
+        url,
+        bodyLen,
+      };
     });
-    if (state.hasCommunityShell && !state.hasLoginCta) return true;
-    if (state.hasLoginCta) {
+
+    const onNasDomain = /nas\.(io|com)/.test(state.url);
+    // Logged in = on a nas domain, page actually rendered (>500 chars), AND
+    // either the Community tab is present OR post cards are visible, AND no
+    // password input is sitting on screen demanding a sign-in.
+    const looksLoggedIn =
+      onNasDomain &&
+      state.bodyLen > 500 &&
+      (state.hasCommunityTab || state.hasFeedHeader || state.hasPostCards) &&
+      !state.hasPasswordInput;
+
+    if (tick % 3 === 0) {
+      console.log(
+        `   🔍 login probe — url=${state.url.slice(0, 60)} bodyLen=${state.bodyLen} ` +
+          `tab=${state.hasCommunityTab} feed=${state.hasFeedHeader} cards=${state.hasPostCards} ` +
+          `pwd=${state.hasPasswordInput}`,
+      );
+    }
+    tick++;
+
+    if (looksLoggedIn) return true;
+    if (state.hasPasswordInput || state.hasGoogleLoginCta) {
       console.log('   🔐 Not logged in. Please sign in to nas.com in the open browser window…');
     }
-    await new Promise((r) => setTimeout(r, 5000));
+    await new Promise((r) => setTimeout(r, 4000));
   }
   return false;
 }
@@ -744,10 +796,12 @@ async function pushToDashboard(payload: Record<string, unknown>): Promise<void> 
 
 async function main() {
   const opts = parseArgs();
-  console.log('🚀 NAS Community Auto-Scraper (v2 — dedup-only)');
+  console.log('🚀 NAS Community Auto-Scraper (v2.1 — last 12h, oldest-first, dedup-aware)');
   console.log(`   profile: ${PROFILE_DIR}`);
   console.log(`   headless: ${opts.headless}`);
   console.log(`   limit: ${opts.limit || 'unlimited'}`);
+  console.log(`   max age: ${opts.maxAgeHours}h`);
+  console.log(`   login timeout: ${Math.round(opts.loginTimeoutMs / 1000)}s`);
 
   let gmail: any = null;
   try {
@@ -778,25 +832,41 @@ async function main() {
     console.log('📜 Auto-scrolling feed to load posts…');
     await autoScrollFeed(page);
 
-    const cards = await collectFeedCards(page);
-    console.log(`📝 Discovered ${cards.length} feed card(s).`);
+    const allCards = await collectFeedCards(page);
+    console.log(`📝 Discovered ${allCards.length} feed card(s).`);
 
     const seen = readSeenPosts();
     const knownIds = knownDedupeIds();
     const feedUrl = page.url();
+    const scrapeStart = new Date();
+
+    // Window filter: only posts whose relative age is <= maxAgeHours.
+    const maxAgeMs = opts.maxAgeHours * 3_600_000;
+    const windowed = allCards.filter((c) => {
+      if (!c.ageLabel) return true; // unknown age — don't drop
+      const posted = parseRelativeTime(c.ageLabel, scrapeStart);
+      return scrapeStart.getTime() - posted.getTime() <= maxAgeMs;
+    });
+    console.log(
+      `⏱️  Within last ${opts.maxAgeHours}h: ${windowed.length}/${allCards.length} card(s).`,
+    );
+
+    // Process OLDEST-first inside the window so dashboard rows land in
+    // chronological order. Feed comes top-down (newest first), so just reverse.
+    const ordered = [...windowed].reverse();
 
     let processed = 0;
-    for (const card of cards) {
-      // Stop the moment we hit a post we've already processed — feed is
-      // ordered newest -> oldest so anything below is older.
-      if (seen[card.postKey]) {
-        console.log(`🛑 Hit already-seen post "${card.headline}" — stopping (dedup gate).`);
-        break;
-      }
-
+    for (const card of ordered) {
       if (opts.limit > 0 && processed >= opts.limit) break;
 
-      console.log(`\n[${processed + 1}/${cards.length}] 🔍 ${card.headline}  (${card.ageLabel || 'no age'})`);
+      // Dedup gate: skip but DO NOT stop — since we walk oldest-first, a
+      // duplicate just means we already covered that one earlier.
+      if (seen[card.postKey]) {
+        console.log(`   ⏭️  Skipping already-seen post "${card.headline}".`);
+        continue;
+      }
+
+      console.log(`\n[${processed + 1}/${ordered.length}] 🔍 ${card.headline}  (${card.ageLabel || 'no age'})`);
 
       const scrapedAt = new Date();
       const postedDate = parseRelativeTime(card.ageLabel, scrapedAt);
