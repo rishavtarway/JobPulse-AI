@@ -844,6 +844,10 @@ async function openPostByUrl(
       '[class*="TopBar"]',
     ];
     const clone = document.body.cloneNode(true) as HTMLElement;
+    // Detached innerText falls back to textContent semantics, which would
+    // include <script>/<style>/__NEXT_DATA__ JSON. Strip those first so the
+    // post body we ship to the LLM isn't crowded out by hydration noise.
+    clone.querySelectorAll('script, style, noscript, template').forEach((n) => n.remove());
     for (const sel of removeSelectors) {
       clone.querySelectorAll(sel).forEach((n) => n.remove());
     }
