@@ -146,7 +146,9 @@ async function scanJobDescription() {
                 const apiResp = await fetch(`${FORM_SERVER}/api/resume/analyze-jd`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ jdText: currentJdText })
+                    // Send the tab URL so the server can keep this JD as context
+                    // for every form field on this page (auto-fill stays consistent).
+                    body: JSON.stringify({ jdText: currentJdText, tabUrl: tabs[0].url })
                 });
                 const { keywords } = await apiResp.json();
                 
