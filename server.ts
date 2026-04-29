@@ -521,6 +521,59 @@ app.post('/api/trigger-yc', (req, res) => {
 });
 
 // ============================================================
+// API: NAS Community Auto-Scraper
+// ============================================================
+app.post('/api/trigger-nas', (req, res) => {
+    if (isRunning) {
+        return res.json({ success: false, message: 'Process already in flight.' });
+    }
+
+    isRunning = true;
+    currentLogs = [`🚀 NAS Community Scraper Initiated at ${new Date().toLocaleString()}\n`];
+
+    const cliArgs = ['tsx', 'fetch_nas_community.ts'];
+    if (req.body && typeof req.body.limit === 'number' && req.body.limit > 0) {
+        cliArgs.push('--limit', String(req.body.limit));
+    }
+    if (req.body && req.body.headless === true) {
+        cliArgs.push('--headless');
+    }
+
+    currentChildProcess = spawn('npx', cliArgs, {
+        cwd: process.cwd(),
+        env: { ...process.env, SERVER_PORT: String(PORT) },
+        shell: true,
+    });
+
+    let stdoutBuffer = '';
+    currentChildProcess.stdout?.on('data', (data: Buffer) => {
+        stdoutBuffer += data.toString();
+        const lines = stdoutBuffer.split('\n');
+        stdoutBuffer = lines.pop() || '';
+        lines.forEach((line: string) => { if (line) currentLogs.push(line + '\n'); });
+    });
+
+    currentChildProcess.stderr?.on('data', (data: Buffer) => {
+        currentLogs.push(data.toString());
+    });
+
+    currentChildProcess.on('close', (code: number | null) => {
+        if (stdoutBuffer) currentLogs.push(stdoutBuffer + '\n');
+        currentLogs.push(`\n✅ NAS scraper finished with exit code ${code}\n`);
+        isRunning = false;
+        currentChildProcess = null;
+    });
+
+    currentChildProcess.on('error', (err: Error) => {
+        currentLogs.push(`\n❌ Failed to start NAS scraper: ${err.message}\n`);
+        isRunning = false;
+        currentChildProcess = null;
+    });
+
+    res.json({ message: 'NAS scraper started' });
+});
+
+// ============================================================
 // API: Follow-up Draft Generator
 // ============================================================
 app.post('/api/send-followups', (req, res) => {
