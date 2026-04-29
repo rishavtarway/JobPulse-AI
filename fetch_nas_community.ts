@@ -577,17 +577,10 @@ async function collectFeedCards(page: Page): Promise<FeedCard[]> {
   return await page.evaluate(() => {
     const RELATIVE_TIME = /\b(just\s+now|\d+\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|wk|wks|week|weeks|mo|month|months|y|yr|yrs|year|years)\s+ago)\b/i;
 
-    // Arrow expression (NOT a function declaration) so the tsx/esbuild loader
-    // doesn't wrap it in __name(...) when serialising for the browser context.
-    const sha1 = (str: string): string => {
-      let h = 0x811c9dc5;
-      for (let i = 0; i < str.length; i++) {
-        h ^= str.charCodeAt(i);
-        h = Math.imul(h, 0x01000193) >>> 0;
-      }
-      return h.toString(16);
-    };
-
+    // sha1 is intentionally INLINED below. The tsx/esbuild loader wraps every
+    // named helper (function decl OR arrow assigned to a const) with a call
+    // to __name(target, "label") which doesn't exist in the browser context.
+    //
     // 1. Find every text node containing a relative-time pattern.
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     const candidates: Element[] = [];
@@ -670,7 +663,14 @@ async function collectFeedCards(page: Page): Promise<FeedCard[]> {
       }
       snippet = snippet.replace(/\s+/g, ' ').trim().slice(0, 240);
 
-      const postKey = sha1((headline + '|' + snippet).toLowerCase());
+      // Stable hash (FNV-1a 32-bit) inlined to avoid a named helper.
+      const __input = (headline + '|' + snippet).toLowerCase();
+      let __h = 0x811c9dc5;
+      for (let __i = 0; __i < __input.length; __i++) {
+        __h ^= __input.charCodeAt(__i);
+        __h = Math.imul(__h, 0x01000193) >>> 0;
+      }
+      const postKey = __h.toString(16);
 
       cards.push({ index, headline, snippet, ageLabel, postKey });
     });
@@ -861,6 +861,18 @@ async function main() {
 
   try {
     const page = await browser.newPage();
+
+    // Belt-and-suspenders: install a no-op __name on every document the page
+    // loads. tsx/esbuild's --keep-names emits __name(target, "label") inside
+    // anything we serialise via page.evaluate. The helper exists in the Node
+    // bundle but NOT in the browser context, so without this shim every
+    // evaluate that contains a named helper throws ReferenceError.
+    // Plain property assignment (no const) is safe — it doesn't get wrapped.
+    await page.evaluateOnNewDocument(() => {
+      // @ts-ignore
+      if (typeof window.__name === 'undefined') window.__name = function (t) { return t; };
+    });
+
     console.log('📡 Navigating to community feed…');
     await page.goto(COMMUNITY_URL, { waitUntil: 'networkidle2', timeout: 90_000 });
 
