@@ -163,6 +163,32 @@ function writeSeenPost(entry: SeenPost) {
   fs.writeFileSync(SEEN_POSTS_FILE, JSON.stringify(seen, null, 2));
 }
 
+/**
+ * Remove every seen-post entry whose jobCount is 0 so the next run will
+ * retry the underlying post (likely a previous run failed extraction
+ * because of __name crash, missing modal isolation, LLM parse failure, etc).
+ * A real meme/announcement that genuinely has no jobs will get re-AI'd next
+ * time too — cheap, and self-correcting.
+ */
+function pruneEmptySeenPosts(): number {
+  if (!fs.existsSync(SEEN_POSTS_FILE)) return 0;
+  let raw: Record<string, SeenPost>;
+  try {
+    raw = JSON.parse(fs.readFileSync(SEEN_POSTS_FILE, 'utf8'));
+  } catch {
+    return 0;
+  }
+  let removed = 0;
+  for (const k of Object.keys(raw)) {
+    if (!raw[k] || (raw[k].jobCount ?? 0) === 0) {
+      delete raw[k];
+      removed++;
+    }
+  }
+  fs.writeFileSync(SEEN_POSTS_FILE, JSON.stringify(raw, null, 2));
+  return removed;
+}
+
 // ============================================================================
 // TIME PARSING
 // ============================================================================
@@ -982,6 +1008,13 @@ async function main() {
     const allCards = await collectFeedCards(page);
     console.log(`📝 Discovered ${allCards.length} feed card(s).`);
 
+    const removedEmpty = pruneEmptySeenPosts();
+    if (removedEmpty > 0) {
+      console.log(
+        `🧹 Pruned ${removedEmpty} stale zero-job entries from nas_seen_posts.json so they retry now.`,
+      );
+    }
+
     const seen = readSeenPosts();
     const knownIds = knownDedupeIds();
     const feedUrl = page.url();
@@ -1028,16 +1061,7 @@ async function main() {
         detailHeadline = result.headline || card.headline;
       } catch (e) {
         console.warn(`   ⚠️  Failed to open post: ${(e as Error).message}`);
-        // Still mark the card as seen so we don't loop on the same broken card.
-        writeSeenPost({
-          postKey: card.postKey,
-          postUrl: feedUrl,
-          headline: card.headline,
-          ageLabel: card.ageLabel,
-          postedDate: postedDate.toISOString(),
-          scrapedAt: scrapedAt.toISOString(),
-          jobCount: 0,
-        });
+        // Don't write a seen entry on failure — we want to retry next run.
         await returnToFeed(page, feedUrl);
         processed++;
         continue;
@@ -1118,15 +1142,24 @@ async function main() {
         totalNewJobs++;
       }
 
-      writeSeenPost({
-        postKey: card.postKey,
-        postUrl,
-        headline: detailHeadline || card.headline,
-        ageLabel: card.ageLabel,
-        postedDate: postedDate.toISOString(),
-        scrapedAt: scrapedAt.toISOString(),
-        jobCount: newJobsThisPost,
-      });
+      // Only persist a seen-post record if we actually extracted at least one
+      // job. Posts that returned 0 jobs (likely an extraction problem) stay
+      // unseen so we retry them next run — self-healing.
+      if (newJobsThisPost > 0) {
+        writeSeenPost({
+          postKey: card.postKey,
+          postUrl,
+          headline: detailHeadline || card.headline,
+          ageLabel: card.ageLabel,
+          postedDate: postedDate.toISOString(),
+          scrapedAt: scrapedAt.toISOString(),
+          jobCount: newJobsThisPost,
+        });
+      } else {
+        console.log(
+          `   ⎭️  Not marking "${detailHeadline || card.headline}" as seen (0 jobs) so it retries next run.`,
+        );
+      }
 
       await returnToFeed(page, feedUrl);
       processed++;
