@@ -319,16 +319,28 @@ STRICT RULES:
 POST HEADLINE: ${headline || '(none)'}
 
 POST TEXT:
-${postText.substring(0, 14000)}`;
+${postText.substring(0, 24000)}`;
 
   const result = await callAI(prompt, true);
-  if (!Array.isArray(result)) return [];
-  return result
+  if (!Array.isArray(result)) {
+    console.log(
+      `      ⤷ LLM returned non-array (parse failed or null). Raw type=${typeof result}`,
+    );
+    return [];
+  }
+  const before = result.length;
+  const filtered = result
     .filter((j) => j && typeof j === 'object' && (j.email || j.link))
     .map((j) => ({
       ...j,
       category: j.email ? 'email-apply' : 'manual-apply',
     })) as ExtractedJob[];
+  if (before > 0 && filtered.length === 0) {
+    console.log(
+      `      ⤷ LLM proposed ${before} item(s) but all filtered out for missing email/link.`,
+    );
+  }
+  return filtered;
 }
 
 interface DraftedEmail {
@@ -773,22 +785,100 @@ async function clickIntoCard(
 
   const afterUrl = page.url();
   const detail = await page.evaluate(() => {
-    // The most informative block on the page: the largest visible text container.
-    const all = Array.from(document.querySelectorAll<HTMLElement>('div, article, section'));
-    let best: { el: HTMLElement; len: number } | null = null;
-    for (const el of all) {
+    // Strategy: find the actual post-detail container, NOT the whole feed
+    // page sitting behind any modal. We try four progressively-loose
+    // strategies and return the first that produces a self-contained chunk
+    // of text smaller than the whole body.
+    const bodyText = (document.body.innerText || '').trim();
+    const bodyLen = bodyText.length;
+
+    const grab = (el: HTMLElement | null): string => {
+      if (!el) return '';
       const t = (el.innerText || '').trim();
-      if (t.length < 80) continue;
-      if (t.length > 30000) continue;
-      // Prefer post-detail-like blocks (avoid full document.body).
-      if (el === document.body) continue;
-      if (!best || t.length > best.len) best = { el, len: t.length };
-    }
-    const heading = document.querySelector<HTMLElement>('h1, h2, h3, h4, [role="heading"], strong, b');
-    return {
-      headline: heading ? (heading.innerText || '').trim().split('\n')[0] : '',
-      postText: best ? best.el.innerText : document.body.innerText,
+      return t.length > 80 && t.length < bodyLen * 0.92 ? t : '';
     };
+
+    // 1. URL fragment -> element id (e.g. #post-8142fc33).
+    const hash = (window.location.hash || '').replace(/^#/, '').trim();
+    let postText = '';
+    if (hash) {
+      postText = grab(document.getElementById(hash)) || grab(
+        document.querySelector<HTMLElement>(`[data-post-id="${hash}"], [data-id="${hash}"]`),
+      );
+    }
+
+    // 2. Modal / dialog / drawer container.
+    if (!postText) {
+      const modalSelectors = [
+        '[role="dialog"]',
+        '[aria-modal="true"]',
+        '[class*="modal"]',
+        '[class*="Modal"]',
+        '[class*="drawer"]',
+        '[class*="Drawer"]',
+        '[class*="dialog"]',
+        '[class*="Dialog"]',
+        '[class*="post-detail"]',
+        '[class*="PostDetail"]',
+        '[class*="overlay"]',
+      ];
+      for (const sel of modalSelectors) {
+        const cands = Array.from(document.querySelectorAll<HTMLElement>(sel));
+        let bestModal: HTMLElement | null = null;
+        let bestLen = 0;
+        for (const el of cands) {
+          const t = (el.innerText || '').trim();
+          if (t.length > bestLen && t.length < bodyLen * 0.92 && t.length > 200) {
+            bestModal = el;
+            bestLen = t.length;
+          }
+        }
+        if (bestModal) {
+          postText = grab(bestModal);
+          if (postText) break;
+        }
+      }
+    }
+
+    // 3. Largest single block that's clearly smaller than the whole body
+    //    (so we can be confident it's NOT the whole feed).
+    if (!postText) {
+      const all = Array.from(document.querySelectorAll<HTMLElement>('article, section, div'));
+      let best: { el: HTMLElement; len: number } | null = null;
+      for (const el of all) {
+        const t = (el.innerText || '').trim();
+        if (t.length < 200) continue;
+        if (t.length > bodyLen * 0.92) continue; // would mean ~entire body
+        if (el === document.body) continue;
+        if (!best || t.length > best.len) best = { el, len: t.length };
+      }
+      if (best) postText = best.el.innerText;
+    }
+
+    // 4. Last resort: body itself (this is the broken behaviour we're
+    //    trying to avoid, but better than nothing).
+    if (!postText) postText = bodyText;
+
+    // Headline: prefer a heading inside the captured block.
+    let headline = '';
+    const headingSel = 'h1, h2, h3, h4, [role="heading"], strong, b';
+    if (postText) {
+      // Find the smallest enclosing element of postText to scope the headline lookup.
+      const all = Array.from(document.querySelectorAll<HTMLElement>(headingSel));
+      for (const h of all) {
+        const ht = (h.innerText || '').trim().split('\n')[0];
+        if (ht && postText.includes(ht) && ht.length < 200 && ht.length > 4) {
+          headline = ht;
+          break;
+        }
+      }
+    }
+    if (!headline) {
+      const fallback = document.querySelector<HTMLElement>(headingSel);
+      headline = fallback ? (fallback.innerText || '').trim().split('\n')[0] : '';
+    }
+
+    return { headline, postText };
   });
 
   let navigatedTo: string | null = null;
@@ -954,10 +1044,18 @@ async function main() {
       }
 
       const postUrl = navigatedTo || `${feedUrl}#post-${card.postKey}`;
+      const snippetPreview = postText.replace(/\s+/g, ' ').slice(0, 220);
       console.log(`   📄 Post body length: ${postText.length}  url: ${postUrl}`);
+      console.log(`   🔎 Body preview: ${snippetPreview}…`);
 
       const jobs = await extractJobsFromPost(detailHeadline, postText);
       console.log(`   🌟 AI extracted ${jobs.length} job(s).`);
+      if (jobs.length === 0) {
+        console.log(
+          `      ⤷ 0 jobs likely means: same body across posts (modal not detected) OR LLM rejected for missing email/link. ` +
+            `headline="${detailHeadline || card.headline}" len=${postText.length}`,
+        );
+      }
 
       let newJobsThisPost = 0;
       for (const job of jobs) {
