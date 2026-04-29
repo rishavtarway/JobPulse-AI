@@ -277,7 +277,19 @@ async function callAI(prompt: string, jsonFlag = false): Promise<any> {
       headers: { Authorization: `Bearer ${openrouterKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'google/gemini-2.0-flash-lite-001',
-        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.1,
+        messages: [
+          ...(jsonFlag
+            ? [
+                {
+                  role: 'system',
+                  content:
+                    'You are a strict JSON-only API. Always respond with raw JSON only, no markdown fences, no commentary. When asked for an array, return ONLY the array literal — never wrap it in an object.',
+                },
+              ]
+            : []),
+          { role: 'user', content: prompt },
+        ],
       }),
     });
     const data: any = await response.json();
@@ -347,10 +359,27 @@ POST HEADLINE: ${headline || '(none)'}
 POST TEXT:
 ${postText.substring(0, 24000)}`;
 
-  const result = await callAI(prompt, true);
+  const raw = await callAI(prompt, true);
+
+  // Some models wrap the array in an object: { jobs: [...] }, { data: [...] }
+  // etc. Unwrap it best-effort.
+  let result: any = raw;
+  if (result && !Array.isArray(result) && typeof result === 'object') {
+    const arrayKey = Object.keys(result).find((k) => Array.isArray(result[k]));
+    if (arrayKey) {
+      console.log(`      ⤷ LLM wrapped array under key "${arrayKey}" — unwrapping.`);
+      result = result[arrayKey];
+    }
+  }
+  // Single-job object (no array wrapper at all).
+  if (result && !Array.isArray(result) && typeof result === 'object' && (result.email || result.link)) {
+    console.log(`      ⤷ LLM returned a single job object — wrapping into array.`);
+    result = [result];
+  }
+
   if (!Array.isArray(result)) {
     console.log(
-      `      ⤷ LLM returned non-array (parse failed or null). Raw type=${typeof result}`,
+      `      ⤷ LLM returned non-array (parse failed or null). Raw type=${typeof raw}`,
     );
     return [];
   }
@@ -604,6 +633,7 @@ interface FeedCard {
   snippet: string;
   ageLabel: string;
   postKey: string; // stable hash of headline + snippet
+  postUrl: string; // direct URL of the post (e.g. .../community#post-8142fc33)
 }
 
 /**
@@ -666,7 +696,7 @@ async function collectFeedCards(page: Page): Promise<FeedCard[]> {
       return 0;
     });
 
-    // 4. Extract a {headline, snippet, ageLabel} per card.
+    // 4. Extract a {headline, snippet, ageLabel, postUrl} per card.
     const cards: FeedCard[] = [];
     cardRoots.forEach((root: HTMLElement, index: number) => {
       const fullText = (root.innerText || '').trim();
@@ -674,12 +704,27 @@ async function collectFeedCards(page: Page): Promise<FeedCard[]> {
       const ageMatch = fullText.match(RELATIVE_TIME);
       const ageLabel = ageMatch ? ageMatch[0] : '';
 
-      // Headline is the most prominent header inside the card.
+      // Headline: prefer h1–h4/role=heading; reject "TechUprise" page chrome.
       let headline = '';
-      const heading = root.querySelector<HTMLElement>('h1, h2, h3, h4, [role="heading"], strong, b');
-      if (heading) headline = (heading.innerText || '').trim().split('\n')[0];
+      const headings = Array.from(
+        root.querySelectorAll<HTMLElement>('h1, h2, h3, h4, [role="heading"], strong, b'),
+      );
+      for (const h of headings) {
+        const ht = (h.innerText || '').trim().split('\n')[0];
+        if (
+          ht &&
+          ht.length > 4 &&
+          ht.length < 200 &&
+          !/^TechUprise(\s|$)/i.test(ht) &&
+          !/Creator/i.test(ht) &&
+          !RELATIVE_TIME.test(ht) &&
+          !/Referral Club/i.test(ht)
+        ) {
+          headline = ht;
+          break;
+        }
+      }
       if (!headline) {
-        // Fallback: first non-meta line that isn't the author label / age.
         const lines = fullText
           .split('\n')
           .map((l) => l.trim())
@@ -688,6 +733,7 @@ async function collectFeedCards(page: Page): Promise<FeedCard[]> {
               l &&
               !/^TechUprise$/i.test(l) &&
               !/Creator/i.test(l) &&
+              !/Referral Club/i.test(l) &&
               !RELATIVE_TIME.test(l),
           );
         headline = lines[0] || fullText.slice(0, 80);
@@ -710,13 +756,124 @@ async function collectFeedCards(page: Page): Promise<FeedCard[]> {
       }
       const postKey = __h.toString(16);
 
-      cards.push({ index, headline, snippet, ageLabel, postKey });
+      // Direct post URL: nas.com puts a <a href="...#post-XXXX"> per card.
+      // Prefer the longest such href that lives inside this card.
+      let postUrl = '';
+      const anchors = Array.from(root.querySelectorAll<HTMLAnchorElement>('a[href]'));
+      for (const a of anchors) {
+        const href = a.href || '';
+        if (/#post-/i.test(href)) {
+          if (href.length > postUrl.length) postUrl = href;
+        }
+      }
+
+      cards.push({ index, headline, snippet, ageLabel, postKey, postUrl });
     });
 
     // Hand back the data + a way to re-find each card by index later.
     // We re-discover roots in the same order in clickIntoCard().
     return cards;
   });
+}
+
+/**
+ * Navigate directly to a post URL (e.g. .../community#post-8142fc33).
+ * nas.com renders a dedicated post-detail page when you hit that URL,
+ * which is far more reliable than dispatching a click on the feed card
+ * (the SPA's onClick handlers don't always fire from page.evaluate-driven
+ * synthetic clicks). If only the hash changes (so the browser doesn't
+ * reload), we force a reload so the SPA actually re-renders.
+ */
+async function openPostByUrl(
+  page: Page,
+  postUrl: string,
+): Promise<{ navigatedTo: string | null; postText: string; headline: string }> {
+  if (!postUrl) {
+    return { navigatedTo: null, postText: '', headline: '' };
+  }
+
+  const before = page.url();
+  const beforePath = before.split('#')[0];
+  const targetPath = postUrl.split('#')[0];
+
+  await page.goto(postUrl, { waitUntil: 'networkidle2', timeout: 60_000 }).catch(() => {});
+
+  // If only the hash changed, the SPA may not have re-rendered. Force a
+  // hard reload so the post-detail view is rendered fresh.
+  if (beforePath === targetPath) {
+    await page.reload({ waitUntil: 'networkidle2', timeout: 60_000 }).catch(() => {});
+  }
+
+  // Give the SPA a beat to settle.
+  await new Promise((r) => setTimeout(r, 1500));
+
+  // Scroll inside the (now opened) post to load all content.
+  await page.evaluate(async () => {
+    await new Promise<void>((resolve) => {
+      let scrolls = 0;
+      const containers = Array.from(document.querySelectorAll<HTMLElement>('div')).filter(
+        (el) => el.scrollHeight > el.clientHeight && el.clientHeight > 200,
+      );
+      const timer = setInterval(() => {
+        window.scrollBy(0, 700);
+        containers.forEach((c) => c.scrollBy(0, 700));
+        scrolls++;
+        if (scrolls >= 6) {
+          clearInterval(timer);
+          resolve();
+        }
+      }, 250);
+    });
+  });
+
+  const detail = await page.evaluate(() => {
+    const RELATIVE_TIME =
+      /\b(just\s+now|\d+\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|wk|wks|week|weeks|mo|month|months|y|yr|yrs|year|years)\s+ago)\b/i;
+
+    // The detail page is dedicated to a single post — body innerText is
+    // overwhelmingly the post content (plus a small header/back arrow / nav).
+    // Strip nav chrome by removing common shells.
+    const removeSelectors = [
+      'nav',
+      'header',
+      'footer',
+      '[role="navigation"]',
+      '[class*="sidebar"]',
+      '[class*="Sidebar"]',
+      '[class*="topbar"]',
+      '[class*="TopBar"]',
+    ];
+    const clone = document.body.cloneNode(true) as HTMLElement;
+    for (const sel of removeSelectors) {
+      clone.querySelectorAll(sel).forEach((n) => n.remove());
+    }
+    const cleanedText = (clone.innerText || '').trim();
+
+    // Pick a headline that is NOT page chrome (TechUprise / Referral Club / Creator).
+    let headline = '';
+    const headings = Array.from(
+      document.querySelectorAll<HTMLElement>('h1, h2, h3, h4, [role="heading"], strong, b'),
+    );
+    for (const h of headings) {
+      const ht = (h.innerText || '').trim().split('\n')[0];
+      if (
+        ht &&
+        ht.length > 4 &&
+        ht.length < 200 &&
+        !/^TechUprise(\s|$)/i.test(ht) &&
+        !/Referral Club/i.test(ht) &&
+        !/Creator/i.test(ht) &&
+        !RELATIVE_TIME.test(ht) &&
+        !/^community$/i.test(ht)
+      ) {
+        headline = ht;
+        break;
+      }
+    }
+    return { postText: cleanedText, headline };
+  });
+
+  return { navigatedTo: page.url(), postText: detail.postText, headline: detail.headline };
 }
 
 /**
@@ -1055,10 +1212,21 @@ async function main() {
       let postText = '';
       let detailHeadline = '';
       try {
-        const result = await clickIntoCard(page, card.index);
-        navigatedTo = result.navigatedTo;
-        postText = result.postText;
-        detailHeadline = result.headline || card.headline;
+        // Prefer direct-URL navigation (the click-to-open path proved
+        // unreliable: the SPA didn't always re-render after our synthetic
+        // click, leaving us scraping the feed background). If we don't
+        // have a postUrl on the card, fall back to clickIntoCard.
+        if (card.postUrl) {
+          const result = await openPostByUrl(page, card.postUrl);
+          navigatedTo = result.navigatedTo;
+          postText = result.postText;
+          detailHeadline = result.headline || card.headline;
+        } else {
+          const result = await clickIntoCard(page, card.index);
+          navigatedTo = result.navigatedTo;
+          postText = result.postText;
+          detailHeadline = result.headline || card.headline;
+        }
       } catch (e) {
         console.warn(`   ⚠️  Failed to open post: ${(e as Error).message}`);
         // Don't write a seen entry on failure — we want to retry next run.
@@ -1067,7 +1235,7 @@ async function main() {
         continue;
       }
 
-      const postUrl = navigatedTo || `${feedUrl}#post-${card.postKey}`;
+      const postUrl = navigatedTo || card.postUrl || `${feedUrl}#post-${card.postKey}`;
       const snippetPreview = postText.replace(/\s+/g, ' ').slice(0, 220);
       console.log(`   📄 Post body length: ${postText.length}  url: ${postUrl}`);
       console.log(`   🔎 Body preview: ${snippetPreview}…`);
