@@ -872,6 +872,10 @@
                 });
             } catch (e) {
                 showToast('Failed to start NAS scraper: ' + e.message);
+                btn.disabled = false;
+                btn.innerHTML = '🌐 SYNC NAS COMMUNITY';
+                document.getElementById('btn-stop').style.display = 'none';
+                return;
             }
             pollLogs();
         }

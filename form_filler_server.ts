@@ -47,6 +47,56 @@ function saveResumeData(data: Record<string, any>) {
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
+// ─────────────────────────────────────────────────────────────────
+// Per-tab Job-Description cache
+// Keeps the JD we last analysed for each tab URL host so every
+// askLLM() call gets the same JD context without the extension
+// having to re-send it for each field. Bounded LRU.
+// ─────────────────────────────────────────────────────────────────
+interface JdEntry {
+    jdText: string;
+    keywords: string[];
+    savedAt: number;
+}
+
+const JD_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+const jdCache = new Map<string, JdEntry>();
+
+function jdCacheKey(url: string): string {
+    if (!url) return '';
+    try {
+        const u = new URL(url);
+        // Include path so two job postings on the same site are kept separately,
+        // but drop query/hash to keep keys stable across page state.
+        return `${u.host}${u.pathname}`;
+    } catch {
+        return url;
+    }
+}
+
+function setJdContext(url: string, jdText: string, keywords: string[] = []) {
+    const key = jdCacheKey(url);
+    if (!key) return;
+    jdCache.set(key, { jdText: jdText || '', keywords: keywords || [], savedAt: Date.now() });
+    // Trim to the 50 most recent.
+    if (jdCache.size > 50) {
+        const oldestKey = [...jdCache.entries()].sort((a, b) => a[1].savedAt - b[1].savedAt)[0]?.[0];
+        if (oldestKey) jdCache.delete(oldestKey);
+    }
+}
+
+function getJdContext(url: string): JdEntry | null {
+    const key = jdCacheKey(url);
+    if (!key) return null;
+    const entry = jdCache.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.savedAt > JD_CACHE_TTL_MS) {
+        jdCache.delete(key);
+        return null;
+    }
+    return entry;
+}
+
 // ── LLM WRAPPER ──────────────────────────────────────────────────
 async function callAI(messages: any[], temperature = 0.1) {
     const nvidiaKey = process.env.NVIDIA_API_KEY;
@@ -195,6 +245,18 @@ PARAGRAPH STRUCTURE for long-form:
 
 NEVER make up facts not in the resume. If the question is completely unrelated to the resume (e.g. personal preferences, fun facts), return UNKNOWN_DATA.`;
 
+    // ── Inject JD context for THIS tab so the LLM keeps the same job in mind
+    //     across every field on the page (fixes the "extension forgets context"
+    //     issue when answering long-form questions like "Why this role?").
+    const jdEntry = getJdContext(pageUrl);
+    let jdBlock = '';
+    if (jdEntry && jdEntry.jdText) {
+        jdBlock = `\n\nCURRENT JOB DESCRIPTION YOU ARE APPLYING TO (use this to tailor every long-form answer):\n${safeSlice(jdEntry.jdText, 2400)}`;
+        if (jdEntry.keywords && jdEntry.keywords.length) {
+            jdBlock += `\n\nKEY REQUIREMENTS THE EMPLOYER CARES ABOUT (weave these into long-form answers naturally): ${jdEntry.keywords.slice(0, 12).join(', ')}`;
+        }
+    }
+
 
     const userPrompt = `
 Field Label: "${fieldLabel}"
@@ -205,7 +267,7 @@ Page URL: ${pageUrl}`;
 
     try {
         const answer = await callAI([
-            { role: 'system', content: sysPrompt },
+            { role: 'system', content: sysPrompt + jdBlock },
             { role: 'user', content: userPrompt }
         ]);
 
@@ -231,6 +293,19 @@ app.get('/api/form-filler/cache', (req, res) => {
 app.get('/api/form-filler/status', (req, res) => {
     const data = loadResumeData();
     res.json({ status: 'online', fields: Object.keys(data).length, llm_available: !!(OPENROUTER_API_KEY) });
+});
+
+// GET /api/form-filler/jd-context — does the server have JD context for THIS tab?
+app.get('/api/form-filler/jd-context', (req, res) => {
+    const url = (req.query.url as string) || '';
+    const entry = getJdContext(url);
+    if (!entry) return res.json({ cached: false });
+    res.json({
+        cached: true,
+        keywords: entry.keywords,
+        savedAt: entry.savedAt,
+        jdLength: entry.jdText.length,
+    });
 });
 
 // GET /api/form-filler/resume — serve local resume PDF for upload injection
@@ -307,7 +382,7 @@ app.post('/api/form-filler/save-learned', (req, res) => {
 
 // POST /api/resume/analyze-jd — Extract keywords from JD
 app.post('/api/resume/analyze-jd', async (req, res) => {
-    const { jdText } = req.body;
+    const { jdText, tabUrl } = req.body;
     if (!jdText) return res.status(400).json({ error: 'No JD text provided' });
 
     console.log(`\n🔍 [JD Analysis] Scanning for keywords...`);
@@ -348,6 +423,14 @@ ${safeSlice(jdText, 2000)}`;
 
         if (keywords.length === 0) {
             keywords = ["Engineering", "Backend", "Frontend", "System Design", "Agile"]; // Hard failsafe
+        }
+
+        // Persist JD + keywords for this tab so subsequent /api/form-filler/ask
+        // calls answer with the *same* job in mind. Fixes the "extension forgets
+        // context about me / the role" issue when filling forms.
+        if (tabUrl) {
+            setJdContext(tabUrl, jdText, keywords);
+            console.log(`   🧠 JD context cached for ${tabUrl}`);
         }
 
         res.json({ keywords });
@@ -432,7 +515,7 @@ app.post('/api/resume/generate-pdf', async (req, res) => {
     let template = fs.readFileSync(templatePath, 'utf-8');
 
     // Robust Sanitize for LaTeX
-    const sanitizeLatex = (str) => {
+    const sanitizeLatex = (str: string): string => {
         return str
             .replace(/(?<!\\)%/g, '\\%')
             .replace(/(?<!\\)&/g, '\\&')
