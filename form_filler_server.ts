@@ -537,17 +537,18 @@ For EACH role, output EXACTLY this block (replace placeholder text only):
 {\\fontsize{8.8}{11}\\selectfont\\textbf{<ROLE TITLE>}\\hfill\\textit{<DATE RANGE>}}\\\\
 {\\fontsize{8.8}{11}\\selectfont\\textbf{\\color{accentblue}<COMPANY>}\\hfill <LOCATION>}
 \\begin{itemize}\\fontsize{8.8}{11}\\selectfont
-  \\item <Bullet 1 tailored to JD, ≤140 chars>
-  \\item <Bullet 2 tailored to JD, ≤140 chars>
-  \\item <Bullet 3 tailored to JD, ≤140 chars>
+  \\item <Bullet 1 tailored to JD, <=140 chars>
+  \\item <Bullet 2 tailored to JD, <=140 chars>
+  \\item <Bullet 3 tailored to JD, <=140 chars>
+  \\item <Bullet 4 tailored to JD, <=140 chars>
 \\end{itemize}
 \\vspace{4pt}
 
 Rules for bullets:
-- Exactly 3 bullets per role (no more, no less).
-- Each bullet ≤140 characters.
+- Exactly 4 bullets per role (no more, no less). We need the page filled.
+- Each bullet <=140 characters.
 - Rewrite to reflect JD priorities, but STAY TRUTHFUL to Rishav's actual work.
-- Use \\textbf{metric}% / \\textbf{Nk+ users} / PR \\#NNNN where real.
+- Use \\textbf{metric\\%} / \\textbf{Nk+ users} / PR \\#NNNN (ALWAYS escape \\# and \\%).
 - Start each bullet with a strong action verb.
 
 ═══════════════════════════════════════════════════════════════════
@@ -558,23 +559,28 @@ For EACH project output EXACTLY:
 {\\fontsize{8.8}{11}\\selectfont\\textbf{<PROJECT NAME>}\\hfill\\href{<LIVE OR GITHUB URL>}{Live | GitHub}}\\\\
 {\\fontsize{8.2}{10}\\selectfont\\textit{<TECH STACK, \\textbullet\\ separated>}}
 \\begin{itemize}\\fontsize{8.8}{11}\\selectfont
-  \\item <Bullet 1 tailored to JD, ≤140 chars>
-  \\item <Bullet 2 tailored to JD, ≤140 chars>
+  \\item <Bullet 1 tailored to JD, <=140 chars>
+  \\item <Bullet 2 tailored to JD, <=140 chars>
+  \\item <Bullet 3 tailored to JD, <=140 chars>
 \\end{itemize}
 \\vspace{4pt}
 
 Rules for projects:
-- Exactly 2 bullets per project.
-- Each bullet ≤140 chars.
-- Links (URLs) are fixed — do not change them.
+- Exactly 3 bullets per project.
+- Each bullet <=140 chars.
+- Links (URLs) are fixed, do not change them.
 
 ═══════════════════════════════════════════════════════════════════
 GLOBAL RULES:
 - Output ONLY raw LaTeX across all three sections, split by [SECTION_SEPARATOR].
 - NO markdown fences. NO "## Skills" headers. NO explanation text.
 - Every user-selected keyword MUST appear at least once across the output.
-- If a keyword does not naturally fit any real bullet, weave it into the closest Skills line — do NOT fabricate experience.
-- Total output must fit ONE A4 page using 9.5pt font; stay within the bullet counts above.
+- If a keyword does not naturally fit any real bullet, weave it into the closest Skills line, do NOT fabricate experience.
+- Total output must FILL ONE A4 page using 9.5pt font; stay within the bullet counts above.
+- NEVER use em-dash or en-dash characters. Always use two hyphens (--) instead.
+- NEVER emit a bare # or %. PR numbers MUST be written as PR \\#1234. Percentages MUST be written as \\textbf{40\\%}.
+- NEVER emit unicode bullet (\\u2022). Always use \\textbullet.
+- NEVER emit smart quotes. Use straight ASCII ' and ".
 `;
 
 const FIXED_RESUME_FACTS = `
@@ -716,6 +722,34 @@ Re-emit ALL THREE sections, with every one of those keywords naturally woven int
     }
 });
 
+// Safely normalise LLM-generated LaTeX before injecting into the template.
+// We CANNOT blanket-escape because the LLM intentionally emits real LaTeX
+// commands (`\textbf`, `\item`, `\fontsize`, `\begin{itemize}`, etc.).
+// We ONLY fix two classes of compile-breaking issues:
+//   1. Unicode glyphs Helvetica T1 can't render (em-dash, en-dash,
+//      bullet, smart quotes) — swap to LaTeX-safe equivalents.
+//   2. Stray `#` and `%` that the model forgot to escape (e.g. "PR #1370"
+//      instead of "PR \#1370"). The negative look-behind `(?<!\\)` makes
+//      sure we do NOT double-escape `\#` / `\%` that were already correct.
+function normalizeLlmLatex(s: string): string {
+    let out = String(s || '');
+    // Unicode → LaTeX-safe
+    out = out.replace(/\u2014/g, '--');              // em-dash
+    out = out.replace(/\u2013/g, '--');              // en-dash
+    out = out.replace(/\u2212/g, '-');               // minus sign
+    out = out.replace(/\u2012/g, '-');               // figure dash
+    out = out.replace(/[\u2018\u2019\u201B]/g, "'"); // smart single quote
+    out = out.replace(/[\u201C\u201D\u201F]/g, '"'); // smart double quote
+    out = out.replace(/\u2022/g, '\\textbullet\\ '); // bullet
+    out = out.replace(/\u2026/g, '\\ldots ');        // ellipsis
+    out = out.replace(/\u00A0/g, ' ');               // nbsp
+    out = out.replace(/[\u200B-\u200D\uFEFF]/g, ''); // zero-width / BOM
+    // Escape stray `#` and `%` ONLY when not already escaped.
+    out = out.replace(/(?<!\\)#/g, '\\#');
+    out = out.replace(/(?<!\\)%/g, '\\%');
+    return out.trim();
+}
+
 // POST /api/resume/generate-pdf — Compile LaTeX to PDF via Tectonic
 app.post('/api/resume/generate-pdf', async (req, res) => {
     const { skills, experience, projects } = req.body;
@@ -723,12 +757,11 @@ app.post('/api/resume/generate-pdf', async (req, res) => {
     const templatePath = path.join(process.cwd(), 'resume_template.tex');
     let template = fs.readFileSync(templatePath, 'utf-8');
 
-    // The optimise endpoint already emits raw LaTeX per section (with \textbf,
-    // \item, \#, \& etc. already escaped) so we do NOT re-sanitize — doing so
-    // would double-escape valid LaTeX commands and break compilation.
-    const safeSkills = String(skills || '').trim();
-    const safeExp = String(experience || '').trim();
-    const safeProj = String(projects || '').trim();
+    // Normalise LLM output — fixes unicode glyphs + stray #/% only; does
+    // NOT touch real LaTeX commands.
+    const safeSkills = normalizeLlmLatex(skills);
+    const safeExp = normalizeLlmLatex(experience);
+    const safeProj = normalizeLlmLatex(projects);
 
     // Placeholder replacement. IMPORTANT: we pass a replacer FUNCTION (not a
     // plain string) because JavaScript's String.replace() interprets `$&`,
