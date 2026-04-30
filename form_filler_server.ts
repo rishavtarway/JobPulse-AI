@@ -99,23 +99,82 @@ function getJdContext(url: string): JdEntry | null {
 
 // ── LLM WRAPPER ──────────────────────────────────────────────────
 async function callAI(messages: any[], temperature = 0.1) {
+    const geminiKey = process.env.GEMINI_API_KEY;
+    const geminiModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash-lite';
     const nvidiaKey = process.env.NVIDIA_API_KEY;
     const openrouterKey = process.env.OPENROUTER_API_KEY;
 
-    if (!nvidiaKey && !openrouterKey) {
-        console.warn('⚠️ No AI API Keys found (NVIDIA or OpenRouter). Skipping LLM.');
+    if (!geminiKey && !nvidiaKey && !openrouterKey) {
+        console.warn('⚠️ No AI API Keys found (Gemini / NVIDIA / OpenRouter). Skipping LLM.');
         return 'UNKNOWN';
+    }
+
+    // ── Direct Gemini (preferred) — matches the NAS scraper's pattern.
+    // Handles 429 with backoff based on Google's `retryDelay` so the free-tier
+    // RPM cap doesn't cascade into empty results.
+    if (geminiKey) {
+        const prompt = messages.map((m) => m.content).join('\n\n---\n\n');
+        for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+                console.log(`🤖 AI Attempt: Using gemini:${geminiModel}...`);
+                const response = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: prompt }] }],
+                            generationConfig: { temperature },
+                        }),
+                    }
+                );
+                const data: any = await response.json();
+                if (data?.error) {
+                    const status = data.error.status || data.error.code;
+                    const msg: string = data.error.message || JSON.stringify(data.error).slice(0, 240);
+                    const isRateLimit =
+                        status === 'RESOURCE_EXHAUSTED' ||
+                        data.error.code === 429 ||
+                        /quota|rate/i.test(msg);
+                    if (isRateLimit && attempt < 2) {
+                        let waitMs = 35_000;
+                        for (const d of data.error.details || []) {
+                            if (d.retryDelay && typeof d.retryDelay === 'string') {
+                                const m = d.retryDelay.match(/(\d+(?:\.\d+)?)s/);
+                                if (m) waitMs = Math.ceil(parseFloat(m[1]) * 1000) + 2_000;
+                            }
+                        }
+                        const inMsg = msg.match(/retry in ([\d.]+)s/i);
+                        if (inMsg) waitMs = Math.ceil(parseFloat(inMsg[1]) * 1000) + 2_000;
+                        console.warn(`   ⏳ Gemini rate-limited (attempt ${attempt + 1}/3). Sleeping ${(waitMs / 1000).toFixed(1)}s then retrying…`);
+                        await new Promise((r) => setTimeout(r, waitMs));
+                        continue;
+                    }
+                    console.warn(`   ⚠️ Gemini API error: ${msg}`);
+                    break;
+                }
+                const content = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (content && content.trim()) return content.trim();
+                console.warn(`   ⚠️ Gemini returned empty content — falling through.`);
+                break;
+            } catch (e: any) {
+                console.error(`   ❌ Gemini call failed (attempt ${attempt + 1}):`, e.message);
+                break;
+            }
+        }
     }
 
     const providers = [];
     if (openrouterKey) {
+        // Only include models confirmed to work on OpenRouter today.
+        // Removed `gemini-2.0-pro-exp-02-05:free` (returns 400 "not a valid
+        // model ID") and `gemma-2-9b-it:free` (returns 404 "No endpoints
+        // found"). Keep the stable flash-lite id.
         providers.push({
             name: 'openrouter',
             key: openrouterKey,
             models: [
                 "google/gemini-2.0-flash-lite-001",
-                "google/gemini-2.0-pro-exp-02-05:free",
-                "google/gemma-2-9b-it:free"
             ],
             endpoint: "https://openrouter.ai/api/v1/chat/completions"
         });
@@ -667,11 +726,15 @@ app.post('/api/resume/generate-pdf', async (req, res) => {
     const safeExp = String(experience || '').trim();
     const safeProj = String(projects || '').trim();
 
-    // Simple placeholder replacement
+    // Placeholder replacement. IMPORTANT: we pass a replacer FUNCTION (not a
+    // plain string) because JavaScript's String.replace() interprets `$&`,
+    // `$'`, `` $` ``, `$$` and `$1` specially inside a string replacement,
+    // which can silently corrupt AI-generated LaTeX containing math-mode
+    // notation like `$f'(x)$`. A function replacer bypasses that.
     const fullLatex = template
-        .replace('{{SKILLS}}', safeSkills)
-        .replace('{{EXPERIENCE}}', safeExp)
-        .replace('{{PROJECTS}}', safeProj);
+        .replace('{{SKILLS}}', () => safeSkills)
+        .replace('{{EXPERIENCE}}', () => safeExp)
+        .replace('{{PROJECTS}}', () => safeProj);
 
     const tempTexPath = path.join(process.cwd(), 'temp_resume.tex');
     const tempPdfPath = path.join(process.cwd(), 'temp_resume.pdf');
