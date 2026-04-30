@@ -830,30 +830,96 @@ async function openPostByUrl(
     const RELATIVE_TIME =
       /\b(just\s+now|\d+\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|wk|wks|week|weeks|mo|month|months|y|yr|yrs|year|years)\s+ago)\b/i;
 
-    // The detail page is dedicated to a single post — body innerText is
-    // overwhelmingly the post content (plus a small header/back arrow / nav).
-    // Strip nav chrome by removing common shells.
-    const removeSelectors = [
-      'nav',
-      'header',
-      'footer',
-      '[role="navigation"]',
-      '[class*="sidebar"]',
-      '[class*="Sidebar"]',
-      '[class*="topbar"]',
-      '[class*="TopBar"]',
-    ];
-    const clone = document.body.cloneNode(true) as HTMLElement;
-    for (const sel of removeSelectors) {
-      clone.querySelectorAll(sel).forEach((n) => n.remove());
-    }
-    const cleanedText = (clone.innerText || '').trim();
+    // Strip script/style/template noise from any element before reading
+    // innerText. innerText on a detached clone falls back to textContent
+    // which inlines <script> JSON (Next.js __NEXT_DATA__) and <style>.
+    const cleanInnerText = (el: HTMLElement): string => {
+      const clone = el.cloneNode(true) as HTMLElement;
+      clone.querySelectorAll('script, style, noscript, template').forEach((n) => n.remove());
+      // Also strip obvious page chrome that often sneaks into modal bodies.
+      clone
+        .querySelectorAll('nav, header, footer, [role="navigation"], [class*="sidebar"], [class*="Sidebar"], [class*="topbar"], [class*="TopBar"]')
+        .forEach((n) => n.remove());
+      return (clone.innerText || '').trim();
+    };
 
-    // Pick a headline that is NOT page chrome (TechUprise / Referral Club / Creator).
+    // ----------------------------------------------------------------
+    // PRIORITY ORDER for post-detail isolation. We MUST avoid leaking
+    // the surrounding feed into the LLM input — that was the silent bug
+    // that left every post showing the same 1761-char preview.
+    // ----------------------------------------------------------------
+    let target: HTMLElement | null = null;
+    let strategy = 'none';
+
+    // 1) Hash-derived id (e.g. #post-c0511e1 → <div id="post-c0511e1">).
+    //    nas.com renders the expanded post detail under exactly this id.
+    const hash = (window.location.hash || '').replace(/^#/, '');
+    if (hash) {
+      const byId = document.getElementById(hash);
+      if (byId) {
+        target = byId;
+        strategy = `by-id:${hash}`;
+      }
+    }
+
+    // 2) Modal / dialog overlays (very common pattern on social SPAs).
+    if (!target) {
+      const dlg =
+        (document.querySelector('[role="dialog"][aria-modal="true"]') as HTMLElement | null) ||
+        (document.querySelector('[role="dialog"]') as HTMLElement | null) ||
+        (document.querySelector('[aria-modal="true"]') as HTMLElement | null);
+      if (dlg) {
+        target = dlg;
+        strategy = 'role=dialog';
+      }
+    }
+
+    // 3) Containers whose className mentions "post" / "PostDetail" / "modal"
+    //    / "Drawer" — pick the largest by innerText length.
+    if (!target) {
+      const candidateRoots = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[class*="PostDetail"], [class*="post-detail"], [class*="PostModal"], [class*="post-modal"], [class*="Modal"], [class*="modal"], [class*="Drawer"], [class*="drawer"]',
+        ),
+      ).filter((el) => (el.innerText || '').length > 100);
+      if (candidateRoots.length) {
+        candidateRoots.sort(
+          (a, b) => (b.innerText || '').length - (a.innerText || '').length,
+        );
+        target = candidateRoots[0];
+        strategy = `class-match:${(target.className || '').split(/\s+/)[0] || '?'}`;
+      }
+    }
+
+    // 4) <article> elements — pick largest.
+    if (!target) {
+      const articles = Array.from(document.querySelectorAll<HTMLElement>('article')).filter(
+        (el) => (el.innerText || '').length > 100,
+      );
+      if (articles.length) {
+        articles.sort((a, b) => (b.innerText || '').length - (a.innerText || '').length);
+        target = articles[0];
+        strategy = 'article';
+      }
+    }
+
+    // 5) Last resort — full body clone with chrome stripped.
+    if (!target) {
+      target = document.body;
+      strategy = 'body-fallback';
+    }
+
+    const cleanedText = cleanInnerText(target);
+
+    // Pick a headline that is NOT page chrome — search WITHIN the target
+    // first so we don't accidentally pick "TechUprise Referral Club" from
+    // the surrounding chrome.
     let headline = '';
-    const headings = Array.from(
-      document.querySelectorAll<HTMLElement>('h1, h2, h3, h4, [role="heading"], strong, b'),
-    );
+    const collectHeadings = (root: HTMLElement) =>
+      Array.from(
+        root.querySelectorAll<HTMLElement>('h1, h2, h3, h4, [role="heading"], strong, b'),
+      );
+    const headings = [...collectHeadings(target), ...collectHeadings(document.body)];
     for (const h of headings) {
       const ht = (h.innerText || '').trim().split('\n')[0];
       if (
@@ -870,9 +936,10 @@ async function openPostByUrl(
         break;
       }
     }
-    return { postText: cleanedText, headline };
+    return { postText: cleanedText, headline, strategy };
   });
 
+  console.log(`   📦 isolation strategy: ${detail.strategy}`);
   return { navigatedTo: page.url(), postText: detail.postText, headline: detail.headline };
 }
 
@@ -1193,6 +1260,7 @@ async function main() {
     const ordered = [...windowed].reverse();
 
     let processed = 0;
+    let previousPostBody = '';
     for (const card of ordered) {
       if (opts.limit > 0 && processed >= opts.limit) break;
 
@@ -1239,6 +1307,25 @@ async function main() {
       const snippetPreview = postText.replace(/\s+/g, ' ').slice(0, 220);
       console.log(`   📄 Post body length: ${postText.length}  url: ${postUrl}`);
       console.log(`   🔎 Body preview: ${snippetPreview}…`);
+
+      // Hard-warn if this post's body matches the previous one's. That
+      // means we're scraping the feed background instead of the post —
+      // exactly the silent failure mode that PRs #5/#7/#8 tried to fix.
+      // Fail loudly so a future regression can't go unnoticed.
+      if (
+        previousPostBody &&
+        postText.length === previousPostBody.length &&
+        postText.slice(0, 200) === previousPostBody.slice(0, 200)
+      ) {
+        console.warn(
+          `   ⚠️  DUPLICATE BODY — same ${postText.length}-char chunk as previous post. ` +
+            `Modal/post isolation FAILED. Skipping LLM call to avoid wasting a request.`,
+        );
+        await returnToFeed(page, feedUrl);
+        processed++;
+        continue;
+      }
+      previousPostBody = postText;
 
       const jobs = await extractJobsFromPost(detailHeadline, postText);
       console.log(`   🌟 AI extracted ${jobs.length} job(s).`);
