@@ -80,6 +80,41 @@ Mobile: +91 7004544142<br>
 <a href="https://www.linkedin.com/in/rishav-tarway-fst/">LinkedIn</a> | <a href="https://my-portfolio-five-roan-36.vercel.app/">Portfolio</a> | <a href="https://github.com/rishavtarway">GitHub</a>
 `;
 
+/**
+ * Paragraph 3 — fixed credibility line with OSS PRs + project links. Static
+ * template (the LLM is not allowed to drift on this) so every email closes
+ * with the same proof points and the same canonical URLs.
+ */
+const PARA3_HTML = `<p>You can check my recent Open Source PRs <a href="https://github.com/OpenPrinting/fuzzing/pull/48">#48</a>, <a href="https://github.com/OpenPrinting/fuzzing/pull/49">#49</a>, <a href="https://github.com/OpenPrinting/fuzzing/pull/50">#50</a>, <a href="https://github.com/OpenPrinting/fuzzing/pull/51">#51</a> and my detailed personal projects <a href="https://github.com/rishavtarway/CoinWatch">CoinWatch</a> (a 60fps Crypto Tracker built with React Native) and <a href="https://github.com/rishavtarway/ProResume">ProResume</a> (an AI Resume Builder powered by GPT-4 and FastAPI).</p>`;
+
+/**
+ * Build a catchy subject line that rotates the bracket family between
+ * `[ ]`, `{ }`, and `( )` based on the role/company hash so different jobs
+ * in the same run don't all look identical. Hook word also rotates so the
+ * line opens differently each time.
+ */
+function buildCatchySubject(role: string, company: string): string {
+  const safeRole = role || 'Software Engineer';
+  const safeCompany = company || 'Hiring Team';
+  const seed = (safeRole + '|' + safeCompany).split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+  const brackets: Array<[string, string]> = [
+    ['[', ']'],
+    ['{', '}'],
+    ['(', ')'],
+  ];
+  const hooks = [
+    'Hands-on',
+    'Production-ready',
+    'Open-source proof',
+    'Shipping fast',
+    'Builder',
+    'Already shipping',
+  ];
+  const [open, close] = brackets[seed % brackets.length];
+  const hook = hooks[seed % hooks.length];
+  return `${open}${hook}${close} ${safeRole} application: Rishav Tarway for ${safeCompany}`;
+}
+
 // ============================================================================
 // CLI ARGS
 // ============================================================================
@@ -310,43 +345,75 @@ async function callAI(prompt: string, jsonFlag = false): Promise<any> {
   // but the user's OpenRouter account intermittently returns
   // { error, user_id } envelopes (quota / model-availability), so prefer
   // direct Gemini whenever GEMINI_API_KEY is set.
+  // Model defaults to gemini-2.0-flash-lite (30 RPM on free tier — plenty
+  // for an 18-post batch + occasional fallback). Override via GEMINI_MODEL.
+  const geminiModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash-lite';
   const geminiKey = process.env.GEMINI_API_KEY;
   if (geminiKey) {
-    let geminiSucceeded = false;
     let geminiResult: any = null;
-    try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              temperature: 0.2,
-              responseMimeType: jsonFlag ? 'application/json' : 'text/plain',
-            },
-          }),
-        },
-      );
-      const data: any = await response.json();
-      if (data?.error) {
-        console.warn(
-          `      ⚠️  Gemini API error: ${data.error.message || JSON.stringify(data.error).slice(0, 240)}`,
+    let geminiSucceeded = false;
+    // Up to 2 retries on rate-limit (429 / RESOURCE_EXHAUSTED). Use the
+    // retryDelay Google returns when present — usually 25-60s on free tier.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: {
+                temperature: 0.2,
+                responseMimeType: jsonFlag ? 'application/json' : 'text/plain',
+              },
+            }),
+          },
         );
-      } else {
+        const data: any = await response.json();
+        if (data?.error) {
+          const status = data.error.status || data.error.code;
+          const msg: string = data.error.message || JSON.stringify(data.error).slice(0, 240);
+          // Rate-limited? Sleep for the retry delay Google sends, then try again.
+          const isRateLimit =
+            status === 'RESOURCE_EXHAUSTED' ||
+            data.error.code === 429 ||
+            /quota|rate/i.test(msg);
+          if (isRateLimit && attempt < 2) {
+            // Google packs retry hint into details[].retryDelay (e.g. "29s") OR the message.
+            let waitMs = 35_000;
+            for (const d of data.error.details || []) {
+              if (d.retryDelay && typeof d.retryDelay === 'string') {
+                const m = d.retryDelay.match(/(\d+(?:\.\d+)?)s/);
+                if (m) waitMs = Math.ceil(parseFloat(m[1]) * 1000) + 2_000;
+              }
+            }
+            const inMsg = msg.match(/retry in ([\d.]+)s/i);
+            if (inMsg) waitMs = Math.ceil(parseFloat(inMsg[1]) * 1000) + 2_000;
+            console.warn(
+              `      ⏳ Gemini rate-limited (attempt ${attempt + 1}/3). Sleeping ${(waitMs / 1000).toFixed(1)}s then retrying…`,
+            );
+            await new Promise((r) => setTimeout(r, waitMs));
+            continue;
+          }
+          console.warn(`      ⚠️  Gemini API error: ${msg}`);
+          break;
+        }
         const content = data?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (!content) {
           console.warn(
             `      ⚠️  Gemini: empty content. Top-level keys=${Object.keys(data || {}).join(',')} preview=${JSON.stringify(data).slice(0, 240)}`,
           );
-        } else {
-          geminiResult = jsonFlag ? parseJsonContent(content, 'Gemini') : content;
-          geminiSucceeded = geminiResult !== null;
+          break;
         }
+        geminiResult = jsonFlag ? parseJsonContent(content, 'Gemini') : content;
+        geminiSucceeded = geminiResult !== null;
+        break;
+      } catch (e) {
+        console.error(`   ⚠️  Gemini call failed (attempt ${attempt + 1}):`, e);
+        // network-level failure → fall through to OpenRouter
+        break;
       }
-    } catch (e) {
-      console.error('   ⚠️  Gemini call failed:', e);
     }
     if (geminiSucceeded) return geminiResult;
     // Otherwise: fall through to OpenRouter.
@@ -537,8 +604,8 @@ For EACH job you find across ALL posts, return one JSON object with:
 - "role": role/title (e.g. "SDE Intern", "Backend Engineer"). Empty string if unclear.
 - "email": HR/application email if explicitly present, else null. If multiple, comma-join.
 - "link": application URL (Google Form, careers page, etc.) if explicitly present, else null.
-- "subject": email subject in the form: "Application for <role> - Rishav Tarway (Full Stack Developer)".
-- "bodyHtml": a tailored 2-paragraph application email in HTML using <p> and <b> tags only. Paragraph 1 ties Rishav's stack to this specific role; Paragraph 2 closes with a brief credibility line + "I have attached my resume and other relevant documents for your review."
+- "subject": IGNORE — the host code will overwrite this with a deterministic catchy subject. You can return "" or a placeholder.
+- "bodyHtml": EXACTLY 2 paragraphs of HTML using <p> only (no <b>, no lists). Paragraph 1: a SHORT greeting line "<p>Hi <Company> Hiring Team,</p>" followed by a 1-2 sentence paragraph that ties Rishav's stack to THIS role. Paragraph 2: a 1-2 sentence credibility line citing internships + a relevant project, ending with "I have attached my resume and other relevant documents for your review." The host code will append a fixed paragraph 3 + signature — DO NOT include any para about open-source PRs, projects, "Best,", or signatures yourself.
 - "description": the FULL original text of THIS job from the post (verbatim, including emojis and line breaks). Prefix with "${'<inPostId>'}. <role>\\n" so each entry is self-identifying.
 
 USER CONTEXT (Rishav Tarway):
@@ -592,15 +659,28 @@ ${manifest}`;
     if (!j || typeof j !== 'object') continue;
     const postKey = String(j.postKey || j.post_key || '').trim();
     if (!validKeys.has(postKey)) continue;
+    const company = String(j.company || 'Hiring Team').trim();
+    const role = String(j.role || '').trim();
+    let bodyHtml = String(j.bodyHtml || j.body_html || '').trim();
+    // Strip any LLM-added "Best,", signature, or para3 drift before we
+    // append our static para3. Keeps the host-controlled closing pristine.
+    bodyHtml = bodyHtml
+      .replace(/<p>\s*Best[\s,.\-]*<\/p>\s*$/i, '')
+      .replace(/<p>[^<]*Open\s*Source\s*PRs?[^<]*<\/p>\s*/gi, '')
+      .replace(/<p>[^<]*Rishav\s*Tarway[^<]*<\/p>\s*$/i, '')
+      .trim();
+    if (bodyHtml) bodyHtml = `${bodyHtml}\n${PARA3_HTML}`;
     cleaned.push({
       postKey,
       inPostId: String(j.inPostId || j.id || '1'),
-      company: String(j.company || 'Hiring Team').trim(),
-      role: String(j.role || '').trim(),
+      company,
+      role,
       email: typeof j.email === 'string' && j.email.trim() ? j.email.trim() : null,
       link: typeof j.link === 'string' && j.link.trim() ? j.link.trim() : null,
-      subject: String(j.subject || `Application for ${j.role || 'role'} - Rishav Tarway (Full Stack Developer)`),
-      bodyHtml: String(j.bodyHtml || j.body_html || ''),
+      // Always overwrite the LLM's subject with a deterministic catchy one
+      // that rotates bracket style + hook word per (role, company).
+      subject: buildCatchySubject(role, company),
+      bodyHtml,
       description: String(j.description || ''),
     });
   }
@@ -617,7 +697,11 @@ async function generateEmailContent(
   company: string,
   role: string,
 ): Promise<DraftedEmail> {
-  const prompt = `Write a tailored, professional 3-paragraph job application email for Rishav Tarway.
+  // We only ask the LLM for the FIRST TWO paragraphs (tailored to the
+  // specific role). Paragraph 3 (open-source PRs + projects) and the
+  // signature are appended deterministically by the host so they can never
+  // drift. The subject is also built deterministically by buildCatchySubject().
+  const prompt = `Write the FIRST TWO paragraphs of a job application email for Rishav Tarway. Paragraph 3 and the signature are added by the host code, do NOT include them.
 
 JOB TEXT: """${jobText.substring(0, 1200)}"""
 COMPANY: ${company || 'the company'}
@@ -626,19 +710,16 @@ ROLE: ${role || 'Software Engineer'}
 USER CONTEXT (Rishav Tarway):
 - B.Tech CSE (AI & ML), 19 months across 5 internships (MOSIP / Classplus / TechVastra / Testbook / Franchizerz).
 - Tech: Node.js, React, Next.js, React Native, Android, Python, Java, Go, MongoDB, Redis, AWS, Docker, Selenium, Cucumber BDD, OSS-Fuzz, Gemini API.
-- Open source: WoC 5.0 OpenPrinting (go-avahi) — built OSS-Fuzz infra, 11 fuzz harnesses, fixed CWE-401 (16MB leak) & CWE-122. PRs in stdlib.js & OpenPrinting.
-- Highlight projects: Tech Stream Community (React+Socket.io+MongoDB+AWS+Redis, 500+ users, 99.9% uptime, https://github.com/rishavtarway/CoinWatch), CoinWatch (React Native, Expo, 60fps, https://github.com/rishavtarway/CoinWatch), ProResume (React Native + Gemini AI ATS resume builder, https://github.com/rishavtarway/ProResume).
 
 STRICT RULES:
 - NO emojis. No em dashes used as separators. No "I am passionate" / "leverage" / "synergize" / "thrilled".
-- Subject: 6–9 words, attention-grabbing, varied brackets ok ([], {}, ()), include role + company.
-- Output EXACTLY 3 paragraphs (each 2 sentences max).
+- Output EXACTLY 2 paragraphs of plain text, each 1-2 sentences.
   Paragraph 1: Lead with what the company does and a recent growth/mission angle inferred from the JOB TEXT. Show I have actually understood the company.
-  Paragraph 2: Map my specific skills + 1-2 internship outcomes to the role's requirements with concrete numbers.
-  Paragraph 3: Cite ONE highly relevant project from the list above with its GitHub link, and close on what I can ship in the first 30 days.
+  Paragraph 2: Map my specific skills + 1-2 internship outcomes to the role's requirements with concrete numbers, and end with "I have attached my resume and other relevant documents for your review."
+- DO NOT include any paragraph about open-source PRs, GitHub projects, CoinWatch, ProResume, or "Best,". Those are appended by the host.
 
 RESPOND WITH RAW JSON ONLY (no markdown):
-{ "subject": "...", "para1": "...", "para2": "...", "para3": "..." }`;
+{ "para1": "...", "para2": "..." }`;
 
   const result = await callAI(prompt, true);
   const safeCompany = company || 'Hiring Team';
@@ -648,13 +729,12 @@ RESPOND WITH RAW JSON ONLY (no markdown):
     `${safeCompany} is building products with real user impact, and the JOB TEXT signals real momentum on the engineering side. The mission and current scale align directly with where I have spent the last 19 months.`;
   const p2 =
     result?.para2 ||
-    `Across 5 internships (MOSIP, Classplus, TechVastra, Testbook, Franchizerz) I shipped production code in Node.js, React/Next.js, and React Native. At Classplus I cut API latency 25% for 10k+ concurrent users and improved observability 40% via request-ID tracing — the same kind of ownership the ${safeRole} role demands.`;
-  const p3 =
-    result?.para3 ||
-    `Most relevant: Tech Stream Community (React + Socket.io + MongoDB + Redis + AWS, 500+ users, 99.9% uptime — https://github.com/rishavtarway/CoinWatch) and ProResume (React Native + Gemini AI, ATS-optimised resume builder — https://github.com/rishavtarway/ProResume). Happy to walk through a 30-day plan in a 20-minute call.`;
-  const subject = result?.subject || `[Application] ${safeRole} : ${safeCompany}`;
+    `Across 5 internships (MOSIP, Classplus, TechVastra, Testbook, Franchizerz) I shipped production code in Node.js, React/Next.js, and React Native. At Classplus I cut API latency 25% for 10k+ concurrent users and improved observability 40% via request-ID tracing, the same kind of ownership the ${safeRole} role demands. I have attached my resume and other relevant documents for your review.`;
+  const subject = buildCatchySubject(safeRole, safeCompany);
 
-  const body = `<p>Hi ${safeCompany} Hiring Team,</p><p>${p1}</p><p>${p2}</p><p>${p3}</p><p>Best,</p>`;
+  // Body = greeting + 2 LLM paras + static para3 (OSS PRs + projects).
+  // No "<p>Best,</p>" — SIGNATURE_HTML already starts with "Best, Rishav Tarway".
+  const body = `<p>Hi ${safeCompany} Hiring Team,</p><p>${p1}</p><p>${p2}</p>${PARA3_HTML}`;
   return { subject, body };
 }
 
