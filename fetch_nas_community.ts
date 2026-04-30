@@ -312,6 +312,8 @@ async function callAI(prompt: string, jsonFlag = false): Promise<any> {
   // direct Gemini whenever GEMINI_API_KEY is set.
   const geminiKey = process.env.GEMINI_API_KEY;
   if (geminiKey) {
+    let geminiSucceeded = false;
+    let geminiResult: any = null;
     try {
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
@@ -332,20 +334,22 @@ async function callAI(prompt: string, jsonFlag = false): Promise<any> {
         console.warn(
           `      ⚠️  Gemini API error: ${data.error.message || JSON.stringify(data.error).slice(0, 240)}`,
         );
-        return null;
+      } else {
+        const content = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!content) {
+          console.warn(
+            `      ⚠️  Gemini: empty content. Top-level keys=${Object.keys(data || {}).join(',')} preview=${JSON.stringify(data).slice(0, 240)}`,
+          );
+        } else {
+          geminiResult = jsonFlag ? parseJsonContent(content, 'Gemini') : content;
+          geminiSucceeded = geminiResult !== null;
+        }
       }
-      const content = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!content) {
-        console.warn(
-          `      ⚠️  Gemini: empty content. Top-level keys=${Object.keys(data || {}).join(',')} preview=${JSON.stringify(data).slice(0, 240)}`,
-        );
-        return null;
-      }
-      return jsonFlag ? parseJsonContent(content, 'Gemini') : content;
     } catch (e) {
       console.error('   ⚠️  Gemini call failed:', e);
-      // Fall through to OpenRouter.
     }
+    if (geminiSucceeded) return geminiResult;
+    // Otherwise: fall through to OpenRouter.
   }
 
   // FALLBACK: OpenRouter (kept around so the script still works for users
