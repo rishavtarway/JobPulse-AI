@@ -831,45 +831,6 @@ async function openPostByUrl(
     });
   });
 
-  // ONE-TIME debug dump for the first post in a run. Lets us see the real
-  // nas.com DOM structure when navigation appears stuck on the feed, so we
-  // can pick the right post-detail selector instead of guessing blindly.
-  if (!dumpedDebugForRun) {
-    dumpedDebugForRun = true;
-    try {
-      const diag = await page.evaluate(() => {
-        const hash = (window.location.hash || '').replace(/^#/, '');
-        const byId = hash ? document.getElementById(hash) : null;
-        const dialogs = document.querySelectorAll('[role="dialog"]').length;
-        const ariaModals = document.querySelectorAll('[aria-modal="true"]').length;
-        const articles = document.querySelectorAll('article').length;
-        const postIds = Array.from(document.querySelectorAll<HTMLElement>('[id^="post-"]')).map(
-          (el) => el.id,
-        );
-        return {
-          url: window.location.href,
-          hash,
-          byIdFound: !!byId,
-          byIdInnerLen: byId ? (byId.innerText || '').length : 0,
-          dialogs,
-          ariaModals,
-          articles,
-          postIdsCount: postIds.length,
-          postIdsSample: postIds.slice(0, 5),
-          bodyLen: (document.body.innerText || '').length,
-        };
-      });
-      console.log('   🩺 DOM DIAG:', JSON.stringify(diag));
-      const html = await page.content();
-      const fs = await import('node:fs');
-      const path = './nas_debug_first_post.html';
-      fs.writeFileSync(path, html, 'utf-8');
-      console.log(`   📤 Wrote first-post HTML dump to ${path} (${html.length} bytes).`);
-    } catch (e) {
-      console.warn(`   ⚠️  Debug dump failed: ${(e as Error).message}`);
-    }
-  }
-
   const detail = await page.evaluate(() => {
     const RELATIVE_TIME =
       /\b(just\s+now|\d+\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|wk|wks|week|weeks|mo|month|months|y|yr|yrs|year|years)\s+ago)\b/i;
@@ -998,7 +959,11 @@ async function clickIntoCard(
   const beforeUrl = page.url();
   const beforeBodyLen = (await page.evaluate(() => document.body.innerText.length)) || 0;
 
-  await page.evaluate((idx) => {
+  // Tag the click target from inside the page so we can fire a real
+  // CDP-level mouse click on it (synthetic .click() inside page.evaluate
+  // does NOT trigger React's synthetic event system reliably, which is
+  // why every prior run kept landing on the feed background).
+  const tagged = await page.evaluate((idx) => {
     const RELATIVE_TIME = /\b(just\s+now|\d+\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|wk|wks|week|weeks|mo|month|months|y|yr|yrs|year|years)\s+ago)\b/i;
 
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
@@ -1041,7 +1006,12 @@ async function clickIntoCard(
       return 0;
     });
     const root = cardRoots[idx];
-    if (!root) return;
+    if (!root) return false;
+
+    // Clear any previous tag.
+    document
+      .querySelectorAll('[data-nas-click-target]')
+      .forEach((el) => el.removeAttribute('data-nas-click-target'));
 
     root.scrollIntoView({ block: 'center' });
 
@@ -1052,8 +1022,20 @@ async function clickIntoCard(
         /see more/i.test(el.innerText || ''),
       ) ||
       root;
-    target.click();
+    target.setAttribute('data-nas-click-target', 'yes');
+    return true;
   }, cardIndex);
+
+  // Real CDP-level mouse click on the tagged target. This fires native
+  // mousedown/mouseup/click events that React DOES handle, unlike the
+  // synthetic .click() we used before.
+  if (tagged) {
+    try {
+      await page.click('[data-nas-click-target="yes"]', { delay: 30 });
+    } catch (e) {
+      console.warn(`   ⚠️  page.click() failed: ${(e as Error).message}`);
+    }
+  }
 
   // Wait for either navigation or the body to grow significantly (modal opened).
   await new Promise((r) => setTimeout(r, 2200));
@@ -1351,6 +1333,48 @@ async function main() {
       const snippetPreview = postText.replace(/\s+/g, ' ').slice(0, 220);
       console.log(`   📄 Post body length: ${postText.length}  url: ${postUrl}`);
       console.log(`   🔎 Body preview: ${snippetPreview}…`);
+
+      // ONE-TIME debug dump on the first post regardless of which
+      // navigation path (openPostByUrl / clickIntoCard) was taken. Writes
+      // the live DOM to ./nas_debug_first_post.html so we can pick the
+      // right post-detail selector when the run still extracts feed text.
+      if (!dumpedDebugForRun) {
+        dumpedDebugForRun = true;
+        try {
+          const diag = await page.evaluate(() => {
+            const hash = (window.location.hash || '').replace(/^#/, '');
+            const byId = hash ? document.getElementById(hash) : null;
+            const dialogs = document.querySelectorAll('[role="dialog"]').length;
+            const ariaModals = document.querySelectorAll('[aria-modal="true"]').length;
+            const articles = document.querySelectorAll('article').length;
+            const postIds = Array.from(
+              document.querySelectorAll<HTMLElement>('[id^="post-"]'),
+            ).map((el) => el.id);
+            return {
+              url: window.location.href,
+              hash,
+              byIdFound: !!byId,
+              byIdInnerLen: byId ? (byId.innerText || '').length : 0,
+              dialogs,
+              ariaModals,
+              articles,
+              postIdsCount: postIds.length,
+              postIdsSample: postIds.slice(0, 5),
+              bodyLen: (document.body.innerText || '').length,
+            };
+          });
+          console.log('   🩺 DOM DIAG:', JSON.stringify(diag));
+          const html = await page.content();
+          const fs = await import('node:fs');
+          const dumpPath = './nas_debug_first_post.html';
+          fs.writeFileSync(dumpPath, html, 'utf-8');
+          console.log(
+            `   📤 Wrote first-post HTML dump to ${dumpPath} (${html.length} bytes).`,
+          );
+        } catch (e) {
+          console.warn(`   ⚠️  Debug dump failed: ${(e as Error).message}`);
+        }
+      }
 
       // Hard-warn if this post's body matches the previous one's. That
       // means we're scraping the feed background instead of the post —
