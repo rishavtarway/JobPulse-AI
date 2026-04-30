@@ -4,12 +4,55 @@ const DASHBOARD = 'http://127.0.0.1:3000';
 let selectedTask = null;
 let serverOnline = false;
 
+// ─────────────────────────────────────────────────────────────────
+// Persistence — chrome-extension popups are ephemeral (every close
+// destroys the DOM) so we cache the last scan + selections in
+// `localStorage`, which IS persistent for extension pages across
+// popup open/close and tab/window switches. No manifest change
+// needed (localStorage on an extension page is not the page's
+// content-script localStorage).
+// ─────────────────────────────────────────────────────────────────
+const STORAGE_KEY = 'jobpulse_resume_state_v1';
+const STORAGE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+function loadPersisted() {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return null;
+        const state = JSON.parse(raw);
+        if (!state || !state.savedAt) return null;
+        if (Date.now() - state.savedAt > STORAGE_TTL_MS) {
+            localStorage.removeItem(STORAGE_KEY);
+            return null;
+        }
+        return state;
+    } catch {
+        return null;
+    }
+}
+
+function savePersisted(patch) {
+    try {
+        const prev = loadPersisted() || {};
+        const next = { ...prev, ...patch, savedAt: Date.now() };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    } catch {
+        /* quota / serialisation errors — don't block UI */
+    }
+}
+
+function clearPersisted() {
+    try { localStorage.removeItem(STORAGE_KEY); } catch {}
+}
+
+// ─────────────────────────────────────────────────────────────────
 // Initialize on load
+// ─────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('fill-tab-btn').addEventListener('click', fillCurrentTab);
     document.getElementById('refresh-tasks-btn').addEventListener('click', loadTasks);
     document.getElementById('open-selected-btn').addEventListener('click', openAndFill);
-    
+
     // Toggle UI Listeners
     document.getElementById('tab-filler').addEventListener('click', () => switchTab('filler'));
     document.getElementById('tab-resume').addEventListener('click', () => switchTab('resume'));
@@ -21,6 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     checkServer();
     loadTasks();
+    restoreResumeState();
 });
 
 function switchTab(tab) {
@@ -115,12 +159,35 @@ async function loadTasks() {
 // ─────────────────────────────────────────────────────────────────
 
 let currentJdText = "";
+let currentKeywords = [];       // every keyword the AI returned
+let currentSelectedSet = null;  // Set<string> — the ones the user *wants* used
 let optimizedLatex = "";
+
+function restoreResumeState() {
+    const state = loadPersisted();
+    if (!state) return;
+
+    currentJdText = state.jdText || "";
+    currentKeywords = Array.isArray(state.keywords) ? state.keywords : [];
+    currentSelectedSet = new Set(Array.isArray(state.selected) ? state.selected : currentKeywords);
+    optimizedLatex = state.optimizedLatex || "";
+
+    const status = document.getElementById('jd-status');
+    if (currentKeywords.length) {
+        renderKeywords(currentKeywords, currentSelectedSet);
+        document.getElementById('keyword-section').style.display = 'block';
+        if (status) status.textContent = `✅ Restored last scan (${currentKeywords.length} keywords).`;
+    }
+    if (optimizedLatex) {
+        const dl = document.getElementById('download-section');
+        if (dl) dl.style.display = 'block';
+    }
+}
 
 async function scanJobDescription() {
     const status = document.getElementById('jd-status');
     const scanBtn = document.getElementById('scan-jd-btn');
-    
+
     status.textContent = "🔍 Extracting from page...";
     scanBtn.disabled = true;
 
@@ -151,10 +218,23 @@ async function scanJobDescription() {
                     body: JSON.stringify({ jdText: currentJdText, tabUrl: tabs[0].url })
                 });
                 const { keywords } = await apiResp.json();
-                
-                displayKeywords(keywords);
-                status.textContent = "✅ Scan complete!";
+
+                currentKeywords = Array.isArray(keywords) ? keywords : [];
+                // NEW: every keyword starts SELECTED — user clicks to *deselect*,
+                // not to select. Matches the user's expectation that "the AI
+                // already analysed them, it should just use them".
+                currentSelectedSet = new Set(currentKeywords);
+
+                renderKeywords(currentKeywords, currentSelectedSet);
+                status.textContent = `✅ Scan complete — ${currentKeywords.length} keywords auto-selected (click to deselect).`;
                 document.getElementById('keyword-section').style.display = 'block';
+
+                savePersisted({
+                    jdText: currentJdText,
+                    keywords: currentKeywords,
+                    selected: Array.from(currentSelectedSet),
+                    optimizedLatex: "",
+                });
             } catch (e) {
                 status.textContent = "❌ AI analysis failed.";
             } finally {
@@ -164,40 +244,61 @@ async function scanJobDescription() {
     });
 }
 
-function displayKeywords(keywords) {
+function renderKeywords(keywords, selectedSet) {
     const list = document.getElementById('keyword-list');
     list.innerHTML = '';
     keywords.forEach(kw => {
         const span = document.createElement('span');
-        span.style.cssText = `background:#E2E8F0; padding:4px 10px; border-radius:100px; font-size:10px; cursor:pointer; margin-bottom:4px;`;
+        span.style.cssText = `padding:4px 10px; border-radius:100px; font-size:10px; cursor:pointer; margin-bottom:4px; border: 1px solid rgba(0,0,0,0.06);`;
         span.textContent = kw;
-        // Default unselected state (white background)
-        span.style.background = '#E2E8F0';
-        span.style.color = 'var(--dark)';
+
+        const isSelected = selectedSet.has(kw);
+        applyPillStyle(span, isSelected);
+        if (isSelected) span.classList.add('selected');
 
         span.onclick = () => {
             if (span.classList.contains('selected')) {
                 span.classList.remove('selected');
-                span.style.background = '#E2E8F0';
-                span.style.color = 'var(--dark)';
+                applyPillStyle(span, false);
+                currentSelectedSet.delete(kw);
             } else {
                 span.classList.add('selected');
-                span.style.background = 'var(--accent)';
-                span.style.color = '#fff';
+                applyPillStyle(span, true);
+                currentSelectedSet.add(kw);
             }
+            savePersisted({ selected: Array.from(currentSelectedSet) });
         };
         list.appendChild(span);
     });
 }
 
+function applyPillStyle(span, isSelected) {
+    if (isSelected) {
+        span.style.background = 'var(--accent)';
+        span.style.color = '#fff';
+    } else {
+        span.style.background = '#E2E8F0';
+        span.style.color = 'var(--dark)';
+    }
+}
+
 async function boostResume() {
-    const selectedKws = Array.from(document.querySelectorAll('#keyword-list span.selected')).map(s => s.textContent);
+    const selectedKws = currentSelectedSet ? Array.from(currentSelectedSet) : [];
     const boostBtn = document.getElementById('optimize-resume-btn');
     const status = document.getElementById('jd-status');
 
-    status.textContent = "🚀 Optimizing Experience & Projects...";
+    if (!currentJdText) {
+        status.textContent = "❌ Scan a JD first.";
+        return;
+    }
+    if (selectedKws.length === 0) {
+        status.textContent = "⚠️ No keywords selected — click at least one before boosting.";
+        return;
+    }
+
+    status.textContent = `🚀 Optimising for ${selectedKws.length} keyword(s)…`;
     boostBtn.disabled = true;
-    boostBtn.textContent = "⚙️ Processsing...";
+    boostBtn.textContent = "⚙️ Processing...";
 
     try {
         // 1. Optimize Content
@@ -215,17 +316,19 @@ async function boostResume() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ skills, experience, projects })
         });
-        
+
         if (!pdfResp.ok) throw new Error("Compilation Error");
-        
+
         const { pdfUrl, latex } = await pdfResp.json();
-        
+
         optimizedLatex = latex;
         document.getElementById('download-section').style.display = 'block';
         status.textContent = "✨ Resume Boosted!";
-        
+
         // Copy LaTeX to clipboard
         navigator.clipboard.writeText(optimizedLatex);
+
+        savePersisted({ optimizedLatex });
     } catch (e) {
         status.textContent = "❌ Optimization failed.";
     } finally {
@@ -259,9 +362,18 @@ function openAndFill() {
     showStatus("🚀 Opening format...", "ok");
 }
 
+// Global status line for Form Filler operations. Always writes to the
+// always-visible #statusMsg (bottom of popup) — NOT to #jd-status (which
+// lives inside #mode-resume and is display:none in Form Filler mode).
+// Resume-booster flows write directly to #jd-status themselves.
 function showStatus(msg, type) {
     const el = document.getElementById('statusMsg');
-    el.className = `status-msg ${type}`;
+    if (!el) return;
+    el.className = `status-msg ${type || ''}`.trim();
     el.textContent = msg;
-    setTimeout(() => { el.textContent = ''; el.className = 'status-msg'; }, 3000);
+    clearTimeout(showStatus._timer);
+    showStatus._timer = setTimeout(() => {
+        el.textContent = '';
+        el.className = 'status-msg';
+    }, 3000);
 }
