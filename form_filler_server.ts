@@ -608,18 +608,31 @@ ${safeSlice(jdText, 2000)}`;
 // POST /api/resume/optimize — AI optimizes resume for JD (Generates LaTeX)
 //
 // New template (main.tex-style, a4paper 9.5pt, two-column, strict 1 page).
-// We generate THREE sections (Skills + Experience + Projects) split by
-// [SECTION_SEPARATOR] markers. The prompt enforces hard 1-page caps on
-// bullet counts and lengths, and the server re-prompts once if any
-// user-selected keyword is missing from the generated output.
+// We generate FOUR sections (Objective + Skills + Experience + Projects)
+// split by [SECTION_SEPARATOR] markers. The prompt enforces hard 1-page
+// caps on bullet counts and lengths, strict bullet templates (user-
+// specified), and the server re-prompts once if any user-selected keyword
+// is missing from the generated output.
 
 const OPTIMIZE_FORMAT_SPEC = `
-OUTPUT EXACTLY THREE SECTIONS separated by the literal marker [SECTION_SEPARATOR].
-The order must be: SKILLS, then EXPERIENCE, then PROJECTS.
-Do NOT include the word "SKILLS", "EXPERIENCE" or "PROJECTS" as a header — the template already has the headings. Output ONLY the body LaTeX for each section.
+OUTPUT EXACTLY FOUR SECTIONS separated by the literal marker [SECTION_SEPARATOR].
+The order must be: OBJECTIVE, then SKILLS, then EXPERIENCE, then PROJECTS.
+Do NOT include the words "OBJECTIVE", "SKILLS", "EXPERIENCE" or "PROJECTS" as headers — the template already has the headings. Output ONLY the body LaTeX for each section.
 
 ═══════════════════════════════════════════════════════════════════
-SECTION 1 — SKILLS (raw LaTeX, MUST use exactly 7 lines, exactly this format):
+SECTION 1 — OBJECTIVE (raw LaTeX, exactly 1 sentence, <=260 chars).
+
+Use this EXACT structure (replace angle-bracket placeholders):
+Software Engineer with 1.5 years of internship experience in <TOP 3-4 STACK ITEMS FROM THE JD, comma-separated>, seeking full-time <EXACT ROLE TITLE FROM THE JD> roles with a focus on <1-2 JD-critical outcomes like "scalable backends" or "data-driven automation">.
+
+Rules:
+- <EXACT ROLE TITLE FROM THE JD> must come from the analysed JD (e.g. "Business Analyst Intern", "Frontend Developer", "ML Engineer"). Use the exact phrasing the JD used.
+- <TOP 3-4 STACK ITEMS> must be the MOST JD-critical user-selected keywords or tech from Rishav's real skill list.
+- Weave in at least 2 JD keywords naturally.
+- No double-quotes. No markdown. One single line.
+
+═══════════════════════════════════════════════════════════════════
+SECTION 2 — SKILLS (raw LaTeX, MUST use exactly 7 lines, exactly this format):
 \\textbf{Languages:} ...\\\\[1pt]
 \\textbf{Web:} ...\\\\[1pt]
 \\textbf{Mobile:} ...\\\\[1pt]
@@ -627,12 +640,12 @@ SECTION 1 — SKILLS (raw LaTeX, MUST use exactly 7 lines, exactly this format):
 \\textbf{Tools:} ...\\\\[1pt]
 \\textbf{AI \\& APIs:} ...\\\\[1pt]
 \\textbf{Core:} ...
-Each line: ≤90 chars after the category. Comma-separated, no trailing period.
+Each line: <=90 chars after the category. Comma-separated, no trailing period.
 Re-order / swap items so JD-critical tech is FIRST in each line.
 Do NOT invent skills Rishav doesn't have — only re-prioritise real ones from his data.
 
 ═══════════════════════════════════════════════════════════════════
-SECTION 2 — EXPERIENCE (raw LaTeX, exactly 5 roles in this order; format per role below):
+SECTION 3 — EXPERIENCE (raw LaTeX, exactly 5 roles in this order; format per role below):
 Roles (fixed, in this order): IIIT Bangalore — MOSIP | Classplus | TechVastra | Testbook | Franchizerz.
 
 For EACH role, output EXACTLY this block (replace placeholder text only):
@@ -644,40 +657,53 @@ For EACH role, output EXACTLY this block (replace placeholder text only):
   \\item <Bullet 3 tailored to JD, <=140 chars>
   \\item <Bullet 4 tailored to JD, <=140 chars>
 \\end{itemize}
-\\vspace{4pt}
+\\vspace{2pt}
+
+BULLET-WRITING TEMPLATES — every bullet MUST follow one of these three shapes:
+  Template A (metric-first):  "Achieved <X\\%> <outcome> for <who / feature> using <tech A>, <tech B>, and <tech C>."
+  Template B (leadership):    "Led <initiative> which led to <X\\%> improvement in <metric / KPI>."
+  Template C (build-verb):    "<Built | Developed | Shipped> <thing> that <did A, B, and C> using <X>, <Y>, and <Z>."
 
 Rules for bullets:
 - Exactly 4 bullets per role (no more, no less). We need the page filled.
 - Each bullet <=140 characters.
-- Rewrite to reflect JD priorities, but STAY TRUTHFUL to Rishav's actual work.
+- Rotate templates A/B/C across the 4 bullets of a role so they don't all look the same.
+- Rewrite to reflect JD priorities, but STAY TRUTHFUL to Rishav's actual work (no fabricated companies, dates, or projects).
+- Always include a concrete metric (\\textbf{40\\%}, \\textbf{10k+ users}, PR \\#1234, \\textbf{60fps}, etc.) — use bold for the metric.
 - Use \\textbf{metric\\%} / \\textbf{Nk+ users} / PR \\#NNNN (ALWAYS escape \\# and \\%).
-- Start each bullet with a strong action verb.
+- Start each bullet with a strong action verb (Achieved / Led / Developed / Built / Designed / Automated / Cut / Reduced / Scaled / Shipped / Integrated).
+- Weave user-selected JD keywords across bullets so every selected keyword appears at least once across Experience + Projects + Skills + Objective.
 
 ═══════════════════════════════════════════════════════════════════
-SECTION 3 — PROJECTS (raw LaTeX, exactly 4 projects in this order; format below):
+SECTION 4 — PROJECTS (raw LaTeX, exactly 4 projects in this order; format below):
 Projects (fixed): Tech Stream Community | CoinWatch | ProResume | Scholar Track.
 
 For EACH project output EXACTLY:
 {\\fontsize{8.8}{11}\\selectfont\\textbf{<PROJECT NAME>}\\hfill\\href{<LIVE OR GITHUB URL>}{Live | GitHub}}\\\\
 {\\fontsize{8.2}{10}\\selectfont\\textit{<TECH STACK, \\textbullet\\ separated>}}
 \\begin{itemize}\\fontsize{8.8}{11}\\selectfont
-  \\item <Bullet 1 tailored to JD, <=140 chars>
-  \\item <Bullet 2 tailored to JD, <=140 chars>
-  \\item <Bullet 3 tailored to JD, <=140 chars>
+  \\item <Bullet 1 tailored to JD, <=150 chars>
+  \\item <Bullet 2 tailored to JD, <=150 chars>
 \\end{itemize}
-\\vspace{4pt}
+\\vspace{2pt}
+
+PROJECT-BULLET TEMPLATE — follow this shape:
+  "<Short Action Verb> <what> that <does A, B, and C> using <X>, <Y>, and <Z>. <Quantified success or adoption metric>."
+Example: "Built a 60fps crypto portfolio tracker that supports live prices, multi-currency, and Supabase sync using React Native, Zustand, and CoinGecko API. Serves 500+ beta users."
 
 Rules for projects:
-- Exactly 3 bullets per project.
-- Each bullet <=140 chars.
+- Exactly 2 bullets per project (tight — the page is already dense).
+- Each bullet <=150 chars.
 - Links (URLs) are fixed, do not change them.
+- Bullet 1 MUST follow the PROJECT-BULLET TEMPLATE (build-verb + tech stack + quantified success).
+- Bullet 2 may be metric-first (Template A) or leadership (Template B) style.
 
 ═══════════════════════════════════════════════════════════════════
 GLOBAL RULES:
-- Output ONLY raw LaTeX across all three sections, split by [SECTION_SEPARATOR].
-- NO markdown fences. NO "## Skills" headers. NO explanation text.
-- Every user-selected keyword MUST appear at least once across the output.
-- If a keyword does not naturally fit any real bullet, weave it into the closest Skills line, do NOT fabricate experience.
+- Output ONLY raw LaTeX across all four sections, split by [SECTION_SEPARATOR].
+- NO markdown fences. NO "## Objective / ## Skills" headers. NO explanation text.
+- Every user-selected keyword MUST appear at least once across the combined Objective + Skills + Experience + Projects.
+- If a keyword does not naturally fit any real bullet, weave it into the Objective or the closest Skills line. Do NOT fabricate experience.
 - Total output must FILL ONE A4 page using 9.5pt font; stay within the bullet counts above.
 - NEVER use em-dash or en-dash characters. Always use two hyphens (--) instead.
 - NEVER emit a bare # or %. PR numbers MUST be written as PR \\#1234. Percentages MUST be written as \\textbf{40\\%}.
@@ -741,9 +767,26 @@ function stripFences(s: string): string {
     return String(s || '').replace(/```latex/ig, '').replace(/```/g, '').trim();
 }
 
-function splitThreeSections(raw: string): { skills: string; experience: string; projects: string } {
+function splitFourSections(raw: string): {
+    objective: string;
+    skills: string;
+    experience: string;
+    projects: string;
+} {
     const parts = String(raw || '').split(/\[SECTION_SEPARATOR\]/i);
+    // Back-compat: older prompts / LLMs may emit only 3 sections (no
+    // Objective). In that case we leave Objective empty; the template
+    // still compiles.
+    if (parts.length >= 4) {
+        return {
+            objective: stripFences(parts[0] || ''),
+            skills: stripFences(parts[1] || ''),
+            experience: stripFences(parts[2] || ''),
+            projects: stripFences(parts[3] || ''),
+        };
+    }
     return {
+        objective: '',
         skills: stripFences(parts[0] || ''),
         experience: stripFences(parts[1] || ''),
         projects: stripFences(parts[2] || ''),
@@ -763,7 +806,7 @@ app.post('/api/resume/optimize', async (req, res) => {
     const { jdText, selectedKeywords } = req.body;
     const kws: string[] = Array.isArray(selectedKeywords) ? selectedKeywords : [];
 
-    console.log(`\n🚀 [Resume Optimization] Re-writing Skills + Experience + Projects for JD…`);
+    console.log(`\n🚀 [Resume Optimization] Re-writing Objective + Skills + Experience + Projects for JD…`);
     console.log(`   Selected keywords (${kws.length}): ${kws.join(', ')}`);
 
     const basePrompt = `Act as a senior career coach + LaTeX expert tailoring Rishav Tarway's one-page resume to the JD below.
@@ -780,32 +823,50 @@ ${OPTIMIZE_FORMAT_SPEC}`;
 
     try {
         let raw = await callAI([{ role: 'user', content: basePrompt }]);
-        let { skills, experience, projects } = splitThreeSections(raw);
+        let { objective, skills, experience, projects } = splitFourSections(raw);
 
-        // Retry ONCE if sections are incomplete
-        if (!skills || !experience || !projects) {
-            console.warn(`   ⚠️  Incomplete sections on first pass (skills=${!!skills}, exp=${!!experience}, proj=${!!projects}) — retrying once…`);
-            raw = await callAI([{ role: 'user', content: basePrompt + '\n\nREMINDER: Output THREE sections separated by [SECTION_SEPARATOR]. Do NOT omit any.' }]);
-            ({ skills, experience, projects } = splitThreeSections(raw));
+        // Retry ONCE if sections are incomplete. Objective is allowed to be
+        // empty on the first pass (old LLM cache / format drift) — we'll
+        // re-prompt for it with the explicit reminder below.
+        const firstPassIncomplete =
+            !objective || !skills || !experience || !projects;
+        if (firstPassIncomplete) {
+            console.warn(
+                `   ⚠️  Incomplete sections on first pass (obj=${!!objective}, skills=${!!skills}, exp=${!!experience}, proj=${!!projects}) — retrying once…`,
+            );
+            raw = await callAI([
+                {
+                    role: 'user',
+                    content:
+                        basePrompt +
+                        '\n\nREMINDER: Output EXACTLY FOUR sections separated by [SECTION_SEPARATOR] — OBJECTIVE, SKILLS, EXPERIENCE, PROJECTS. Do NOT omit any. The OBJECTIVE is a single sentence opener that names the JD role.',
+                },
+            ]);
+            ({ objective, skills, experience, projects } = splitFourSections(raw));
         }
 
         // Keyword-coverage check across the combined output — re-prompt once if any missing
         if (kws.length) {
-            const combined = `${skills}\n${experience}\n${projects}`;
+            const combined = `${objective}\n${skills}\n${experience}\n${projects}`;
             const missing = findMissingKeywords(kws, combined);
             if (missing.length) {
                 console.warn(`   ⚠️  Missing ${missing.length}/${kws.length} keywords: ${missing.join(', ')} — re-prompting for coverage…`);
                 const coveragePrompt = basePrompt + `
 
 COVERAGE FAILURE — your previous answer omitted these keywords: ${missing.join(', ')}.
-Re-emit ALL THREE sections, with every one of those keywords naturally woven into the closest real bullet (or Skills line). Do NOT fabricate experience; if a keyword has no real fit, add it to the relevant Skills line.`;
+Re-emit ALL FOUR sections (OBJECTIVE, SKILLS, EXPERIENCE, PROJECTS), with every one of those keywords naturally woven into the closest real bullet, the Objective sentence, or a Skills line. Do NOT fabricate experience; if a keyword has no real fit, add it to the Objective or the relevant Skills line.`;
                 const retryRaw = await callAI([{ role: 'user', content: coveragePrompt }]);
-                const retry = splitThreeSections(retryRaw);
+                const retry = splitFourSections(retryRaw);
                 if (retry.skills && retry.experience && retry.projects) {
+                    // Keep previous Objective if retry dropped it.
+                    objective = retry.objective || objective;
                     skills = retry.skills;
                     experience = retry.experience;
                     projects = retry.projects;
-                    const stillMissing = findMissingKeywords(kws, `${skills}\n${experience}\n${projects}`);
+                    const stillMissing = findMissingKeywords(
+                        kws,
+                        `${objective}\n${skills}\n${experience}\n${projects}`,
+                    );
                     if (stillMissing.length) {
                         console.warn(`   ⚠️  Still missing after retry: ${stillMissing.join(', ')} (proceeding anyway).`);
                     } else {
@@ -817,7 +878,7 @@ Re-emit ALL THREE sections, with every one of those keywords naturally woven int
             }
         }
 
-        res.json({ skills, experience, projects });
+        res.json({ objective, skills, experience, projects });
     } catch (e: any) {
         console.log('Optimize Error Triggered:', e.message);
         res.status(500).json({ error: 'Failed to optimize resume' });
@@ -854,13 +915,17 @@ function normalizeLlmLatex(s: string): string {
 
 // POST /api/resume/generate-pdf — Compile LaTeX to PDF via Tectonic
 app.post('/api/resume/generate-pdf', async (req, res) => {
-    const { skills, experience, projects } = req.body;
+    const { objective, skills, experience, projects } = req.body;
 
     const templatePath = path.join(process.cwd(), 'resume_template.tex');
     let template = fs.readFileSync(templatePath, 'utf-8');
 
     // Normalise LLM output — fixes unicode glyphs + stray #/% only; does
-    // NOT touch real LaTeX commands.
+    // NOT touch real LaTeX commands. Fallback for Objective so older
+    // clients (without the Objective field) still render cleanly.
+    const fallbackObjective =
+        'Software Engineer with 1.5 years of internship experience in Full Stack (React, Node.js, TypeScript) and AI/ML, seeking full-time engineering roles.';
+    const safeObjective = normalizeLlmLatex(objective || fallbackObjective);
     const safeSkills = normalizeLlmLatex(skills);
     const safeExp = normalizeLlmLatex(experience);
     const safeProj = normalizeLlmLatex(projects);
@@ -871,6 +936,7 @@ app.post('/api/resume/generate-pdf', async (req, res) => {
     // which can silently corrupt AI-generated LaTeX containing math-mode
     // notation like `$f'(x)$`. A function replacer bypasses that.
     const fullLatex = template
+        .replace('{{OBJECTIVE}}', () => safeObjective)
         .replace('{{SKILLS}}', () => safeSkills)
         .replace('{{EXPERIENCE}}', () => safeExp)
         .replace('{{PROJECTS}}', () => safeProj);

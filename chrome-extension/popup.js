@@ -307,14 +307,14 @@ async function boostResume() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ jdText: currentJdText, selectedKeywords: selectedKws })
         });
-        const { skills, experience, projects } = await optResp.json();
+        const { objective, skills, experience, projects } = await optResp.json();
 
         // 2. Generate PDF via Tectonic
         status.textContent = "📄 Compiling LaTeX to PDF...";
         const pdfResp = await fetch(`${FORM_SERVER}/api/resume/generate-pdf`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ skills, experience, projects })
+            body: JSON.stringify({ objective, skills, experience, projects })
         });
 
         if (!pdfResp.ok) throw new Error("Compilation Error");
