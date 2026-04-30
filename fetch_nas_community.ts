@@ -339,22 +339,71 @@ function parseJsonContent(content: string, source: string): any {
   }
 }
 
+// Session-level provider disable flag so one daily-quota failure doesn't
+// cost us 60s × N retries on every subsequent post.
+const nasProviderDisabledUntil: Record<string, number> = {};
+const nasIsDisabled = (n: string) => (nasProviderDisabledUntil[n] || 0) > Date.now();
+const nasDisable = (n: string, ms: number, reason: string) => {
+  nasProviderDisabledUntil[n] = Date.now() + ms;
+  console.warn(`      🚫 Disabling ${n} for ${Math.round(ms / 1000)}s (${reason}).`);
+};
+
 async function callAI(prompt: string, jsonFlag = false): Promise<any> {
-  // PRIMARY: direct Google Gemini API. process_nas_manual.ts uses this same
-  // endpoint and it's known-working. We tried OpenRouter first historically
-  // but the user's OpenRouter account intermittently returns
-  // { error, user_id } envelopes (quota / model-availability), so prefer
-  // direct Gemini whenever GEMINI_API_KEY is set.
-  // Model defaults to gemini-2.0-flash-lite (30 RPM on free tier — plenty
-  // for an 18-post batch + occasional fallback). Override via GEMINI_MODEL.
+  // PRIMARY: Groq. Llama 3.3 70B versatile, ~1-2s per call, ~30 req/min free.
+  // Handles the 18-post batch easily without rate-limit drama.
+  const groqKey = process.env.GROQ_API_KEY;
+  if (groqKey && !nasIsDisabled('groq')) {
+    try {
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          temperature: 0.2,
+          messages: [
+            ...(jsonFlag
+              ? [
+                  {
+                    role: 'system',
+                    content:
+                      'You are a strict JSON-only API. Always respond with raw JSON only, no markdown fences, no commentary. When asked for an array, return ONLY the array literal — never wrap it in an object.',
+                  },
+                ]
+              : []),
+            { role: 'user', content: prompt },
+          ],
+          ...(jsonFlag ? { response_format: { type: 'json_object' } } : {}),
+        }),
+      });
+      const data: any = await response.json();
+      if (response.status === 429 || response.status === 503) {
+        nasDisable('groq', 60_000, `HTTP ${response.status}`);
+      } else if (data?.error) {
+        console.warn(`      ⚠️  Groq error: ${typeof data.error === 'string' ? data.error : data.error?.message || JSON.stringify(data.error).slice(0, 240)}`);
+      } else {
+        const content = data?.choices?.[0]?.message?.content;
+        if (content) {
+          const parsed = jsonFlag ? parseJsonContent(content, 'Groq') : content;
+          if (parsed !== null) return parsed;
+        }
+      }
+    } catch (e) {
+      console.error('      ⚠️  Groq call failed:', e);
+    }
+  }
+
+  // FALLBACK 1: direct Google Gemini API. Used when Groq is unavailable or
+  // fails. Single short retry only — long retryDelay or "limit: 0" disables
+  // Gemini for the rest of the run instead of sleeping 60s × 2 every call.
   const geminiModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash-lite';
   const geminiKey = process.env.GEMINI_API_KEY;
-  if (geminiKey) {
+  if (geminiKey && !nasIsDisabled('gemini')) {
     let geminiResult: any = null;
     let geminiSucceeded = false;
-    // Up to 2 retries on rate-limit (429 / RESOURCE_EXHAUSTED). Use the
-    // retryDelay Google returns when present — usually 25-60s on free tier.
-    for (let attempt = 0; attempt < 3; attempt++) {
+    // Single short retry only. If Google returns a long retryDelay or
+    // "limit: 0" (daily quota done), we session-disable Gemini and move on
+    // to the next post's Groq call, instead of sleeping 60s × 3.
+    for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const response = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`,
@@ -379,22 +428,32 @@ async function callAI(prompt: string, jsonFlag = false): Promise<any> {
             status === 'RESOURCE_EXHAUSTED' ||
             data.error.code === 429 ||
             /quota|rate/i.test(msg);
-          if (isRateLimit && attempt < 2) {
-            // Google packs retry hint into details[].retryDelay (e.g. "29s") OR the message.
-            let waitMs = 35_000;
+          if (isRateLimit) {
+            // Parse retryDelay. If >=20s OR message contains "limit: 0"
+            // (daily quota burned), disable Gemini for the rest of the run.
+            let retrySec = 0;
             for (const d of data.error.details || []) {
               if (d.retryDelay && typeof d.retryDelay === 'string') {
                 const m = d.retryDelay.match(/(\d+(?:\.\d+)?)s/);
-                if (m) waitMs = Math.ceil(parseFloat(m[1]) * 1000) + 2_000;
+                if (m) retrySec = parseFloat(m[1]);
               }
             }
             const inMsg = msg.match(/retry in ([\d.]+)s/i);
-            if (inMsg) waitMs = Math.ceil(parseFloat(inMsg[1]) * 1000) + 2_000;
-            console.warn(
-              `      ⏳ Gemini rate-limited (attempt ${attempt + 1}/3). Sleeping ${(waitMs / 1000).toFixed(1)}s then retrying…`,
-            );
-            await new Promise((r) => setTimeout(r, waitMs));
-            continue;
+            if (inMsg) retrySec = Math.max(retrySec, parseFloat(inMsg[1]));
+            const dailyQuotaDone = /limit:\s*0/i.test(msg);
+            if (dailyQuotaDone || retrySec >= 20) {
+              const disableMs = dailyQuotaDone ? 6 * 60 * 60 * 1000 : Math.ceil(retrySec * 1000) + 5_000;
+              nasDisable('gemini', disableMs, dailyQuotaDone ? 'daily quota (limit:0)' : `long retryDelay ${retrySec}s`);
+              break;
+            }
+            if (attempt === 0 && retrySec > 0 && retrySec <= 10) {
+              const waitMs = Math.ceil(retrySec * 1000) + 1_000;
+              console.warn(`      ⏳ Gemini short rate-limit (${retrySec}s). One quick retry…`);
+              await new Promise((r) => setTimeout(r, waitMs));
+              continue;
+            }
+            console.warn(`      ⚠️  Gemini rate-limited with no usable retry hint. Skipping.`);
+            break;
           }
           console.warn(`      ⚠️  Gemini API error: ${msg}`);
           break;
@@ -419,12 +478,12 @@ async function callAI(prompt: string, jsonFlag = false): Promise<any> {
     // Otherwise: fall through to OpenRouter.
   }
 
-  // FALLBACK: OpenRouter (kept around so the script still works for users
+  // FALLBACK 2: OpenRouter (kept around so the script still works for users
   // who only have an OpenRouter key configured).
   const openrouterKey = process.env.OPENROUTER_API_KEY;
   if (!openrouterKey) {
     console.warn(
-      '   ⚠️  No GEMINI_API_KEY or OPENROUTER_API_KEY set — skipping AI extraction.',
+      '   ⚠️  No GROQ_API_KEY / GEMINI_API_KEY / OPENROUTER_API_KEY — skipping AI extraction.',
     );
     return null;
   }
