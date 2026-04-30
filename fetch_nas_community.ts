@@ -375,11 +375,20 @@ async function callAI(prompt: string, jsonFlag = false): Promise<any> {
           ...(jsonFlag ? { response_format: { type: 'json_object' } } : {}),
         }),
       });
-      const data: any = await response.json();
-      if (response.status === 429 || response.status === 503) {
+      const data: any = await response.json().catch(() => ({}));
+      // Mirror tryOpenAIChatProvider() in form_filler_server.ts: disable
+      // Groq for the rest of the run on auth errors (401 / invalid key) or
+      // billing issues (402) so we don't waste a round-trip per post. Short
+      // disable on 429 / 503 so the next call skips Groq too.
+      if (response.status === 401 || response.status === 402) {
+        nasDisable('groq', 60 * 60 * 1000, `HTTP ${response.status}`);
+      } else if (response.status === 429 || response.status === 503) {
         nasDisable('groq', 60_000, `HTTP ${response.status}`);
-      } else if (data?.error) {
-        console.warn(`      ⚠️  Groq error: ${typeof data.error === 'string' ? data.error : data.error?.message || JSON.stringify(data.error).slice(0, 240)}`);
+      } else if (!response.ok || data?.error) {
+        const errMsg = typeof data?.error === 'string'
+          ? data.error
+          : data?.error?.message || JSON.stringify(data?.error || data).slice(0, 240);
+        console.warn(`      ⚠️  Groq error (HTTP ${response.status}): ${errMsg}`);
       } else {
         const content = data?.choices?.[0]?.message?.content;
         if (content) {
