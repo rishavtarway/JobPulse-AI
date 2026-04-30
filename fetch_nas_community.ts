@@ -776,6 +776,11 @@ async function collectFeedCards(page: Page): Promise<FeedCard[]> {
   });
 }
 
+// One-shot flag: dump the first post's DOM diagnostics + full HTML so we
+// can debug nas.com's actual layout when extraction appears stuck on the
+// feed background. Resets per process.
+let dumpedDebugForRun = false;
+
 /**
  * Navigate directly to a post URL (e.g. .../community#post-8142fc33).
  * nas.com renders a dedicated post-detail page when you hit that URL,
@@ -825,6 +830,45 @@ async function openPostByUrl(
       }, 250);
     });
   });
+
+  // ONE-TIME debug dump for the first post in a run. Lets us see the real
+  // nas.com DOM structure when navigation appears stuck on the feed, so we
+  // can pick the right post-detail selector instead of guessing blindly.
+  if (!dumpedDebugForRun) {
+    dumpedDebugForRun = true;
+    try {
+      const diag = await page.evaluate(() => {
+        const hash = (window.location.hash || '').replace(/^#/, '');
+        const byId = hash ? document.getElementById(hash) : null;
+        const dialogs = document.querySelectorAll('[role="dialog"]').length;
+        const ariaModals = document.querySelectorAll('[aria-modal="true"]').length;
+        const articles = document.querySelectorAll('article').length;
+        const postIds = Array.from(document.querySelectorAll<HTMLElement>('[id^="post-"]')).map(
+          (el) => el.id,
+        );
+        return {
+          url: window.location.href,
+          hash,
+          byIdFound: !!byId,
+          byIdInnerLen: byId ? (byId.innerText || '').length : 0,
+          dialogs,
+          ariaModals,
+          articles,
+          postIdsCount: postIds.length,
+          postIdsSample: postIds.slice(0, 5),
+          bodyLen: (document.body.innerText || '').length,
+        };
+      });
+      console.log('   🩺 DOM DIAG:', JSON.stringify(diag));
+      const html = await page.content();
+      const fs = await import('node:fs');
+      const path = './nas_debug_first_post.html';
+      fs.writeFileSync(path, html, 'utf-8');
+      console.log(`   📤 Wrote first-post HTML dump to ${path} (${html.length} bytes).`);
+    } catch (e) {
+      console.warn(`   ⚠️  Debug dump failed: ${(e as Error).message}`);
+    }
+  }
 
   const detail = await page.evaluate(() => {
     const RELATIVE_TIME =

@@ -16,6 +16,10 @@ token.json
 *.pdf
 Cold_Mailing_Template*
 
+# NAS scraper local artifacts
+nas_chrome_profile/
+nas_debug_first_post.html
+
 # Temporary testing files
 create_test_drafts.ts
 create_manual_drafts.ts
