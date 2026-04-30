@@ -294,24 +294,47 @@ async function callAI(prompt: string, jsonFlag = false): Promise<any> {
     });
     const data: any = await response.json();
     const content = data?.choices?.[0]?.message?.content;
-    if (!content) return null;
+    if (!content) {
+      console.warn(
+        `      ⚠️  callAI: empty content. Top-level keys=${Object.keys(data || {}).join(',')}`,
+      );
+      return null;
+    }
 
     if (jsonFlag) {
       const trimmed = content.trim();
       try {
         return JSON.parse(trimmed);
       } catch {
-        const firstBrace = trimmed.indexOf('[');
-        const firstObj = trimmed.indexOf('{');
+        // Strip markdown code fences if present (\`\`\`json ... \`\`\`).
+        const fenceStripped = trimmed
+          .replace(/^```(?:json)?\s*/i, '')
+          .replace(/```\s*$/i, '')
+          .trim();
+        try {
+          return JSON.parse(fenceStripped);
+        } catch {
+          /* fall through */
+        }
+        const firstBrace = fenceStripped.indexOf('[');
+        const firstObj = fenceStripped.indexOf('{');
         const start =
           firstBrace !== -1 && (firstObj === -1 || firstBrace < firstObj) ? firstBrace : firstObj;
-        const lastBrace = trimmed.lastIndexOf(']');
-        const lastObj = trimmed.lastIndexOf('}');
+        const lastBrace = fenceStripped.lastIndexOf(']');
+        const lastObj = fenceStripped.lastIndexOf('}');
         const end = Math.max(lastBrace, lastObj);
-        if (start === -1 || end === -1) return null;
+        if (start === -1 || end === -1) {
+          console.warn(
+            `      ⚠️  callAI: JSON parse failed, no JSON delimiters found. Raw[0..200]=${trimmed.slice(0, 200)}`,
+          );
+          return null;
+        }
         try {
-          return JSON.parse(trimmed.substring(start, end + 1));
-        } catch {
+          return JSON.parse(fenceStripped.substring(start, end + 1));
+        } catch (e) {
+          console.warn(
+            `      ⚠️  callAI: JSON parse failed even after substring. err=${(e as Error).message}. Raw[0..200]=${trimmed.slice(0, 200)}`,
+          );
           return null;
         }
       }
@@ -321,6 +344,22 @@ async function callAI(prompt: string, jsonFlag = false): Promise<any> {
     console.error('   ⚠️  callAI error:', e);
     return null;
   }
+}
+
+/**
+ * Pull the first array we can find anywhere inside the LLM's JSON response.
+ * Models intermittently wrap arrays in objects (e.g. {jobs: [...]},
+ * {data: {items: [...]}}, {result: {jobs: {list: [...]}}}). Walk the tree
+ * up to a small depth and return the first encountered array.
+ */
+function findFirstArrayInResponse(node: any, maxDepth = 4): any[] | null {
+  if (Array.isArray(node)) return node;
+  if (!node || typeof node !== 'object' || maxDepth <= 0) return null;
+  for (const v of Object.values(node)) {
+    const found = findFirstArrayInResponse(v, maxDepth - 1);
+    if (found) return found;
+  }
+  return null;
 }
 
 interface ExtractedJob {
@@ -361,14 +400,14 @@ ${postText.substring(0, 24000)}`;
 
   const raw = await callAI(prompt, true);
 
-  // Some models wrap the array in an object: { jobs: [...] }, { data: [...] }
-  // etc. Unwrap it best-effort.
+  // Models intermittently wrap arrays at any depth: { jobs: [...] },
+  // { data: { items: [...] } }, etc. Walk the tree.
   let result: any = raw;
   if (result && !Array.isArray(result) && typeof result === 'object') {
-    const arrayKey = Object.keys(result).find((k) => Array.isArray(result[k]));
-    if (arrayKey) {
-      console.log(`      ⤷ LLM wrapped array under key "${arrayKey}" — unwrapping.`);
-      result = result[arrayKey];
+    const found = findFirstArrayInResponse(result);
+    if (found) {
+      console.log(`      ⤷ LLM wrapped array inside object — unwrapping (${found.length} item(s)).`);
+      result = found;
     }
   }
   // Single-job object (no array wrapper at all).
@@ -378,8 +417,10 @@ ${postText.substring(0, 24000)}`;
   }
 
   if (!Array.isArray(result)) {
+    const preview =
+      raw === null || raw === undefined ? String(raw) : JSON.stringify(raw).slice(0, 240);
     console.log(
-      `      ⤷ LLM returned non-array (parse failed or null). Raw type=${typeof raw}`,
+      `      ⤷ LLM returned non-array (parse failed or null). Raw type=${typeof raw} preview=${preview}`,
     );
     return [];
   }
@@ -396,6 +437,117 @@ ${postText.substring(0, 24000)}`;
     );
   }
   return filtered;
+}
+
+// ----------------------------------------------------------------------------
+// Batch extraction: take ALL post bodies in one shot and have the LLM extract
+// every job AND draft the application email subject/body in a single call.
+// Saves ~N round-trips per run. Fields chosen to match the dashboard ingest
+// payload directly so we can skip the separate generateEmailContent() pass.
+// ----------------------------------------------------------------------------
+
+interface BatchedJob {
+  postKey: string;          // identifies which feed card this job came from
+  inPostId: string;          // 1-based id within the post (stable for dedup)
+  company: string;
+  role: string;
+  email: string | null;
+  link: string | null;
+  subject: string;
+  bodyHtml: string;          // already-drafted application email (HTML)
+  description: string;       // original job text for dashboard "description" field
+}
+
+async function extractAndDraftAll(
+  posts: Array<{ postKey: string; headline: string; body: string }>,
+): Promise<BatchedJob[]> {
+  if (posts.length === 0) return [];
+
+  // Build a numbered manifest the LLM can reference back via postKey.
+  const manifest = posts
+    .map(
+      (p, i) =>
+        `### POST ${i + 1} (postKey=${p.postKey})\nHEADLINE: ${p.headline || '(none)'}\nBODY:\n${p.body.substring(0, 6000)}`,
+    )
+    .join('\n\n---\n\n');
+
+  const prompt = `You are extracting EVERY distinct job/internship from MULTIPLE community hiring posts AND drafting a tailored 2-paragraph application email per job.
+
+For EACH job you find across ALL posts, return one JSON object with:
+- "postKey": the postKey from the POST header the job belongs to (copy verbatim).
+- "inPostId": 1-based ordinal of this job within its post (e.g. "1", "2"). If the post has only one job use "1".
+- "company": company name (best guess from the text; "Hiring Team" if truly unknown).
+- "role": role/title (e.g. "SDE Intern", "Backend Engineer"). Empty string if unclear.
+- "email": HR/application email if explicitly present, else null. If multiple, comma-join.
+- "link": application URL (Google Form, careers page, etc.) if explicitly present, else null.
+- "subject": email subject in the form: "Application for <role> - Rishav Tarway (Full Stack Developer)".
+- "bodyHtml": a tailored 2-paragraph application email in HTML using <p> and <b> tags only. Paragraph 1 ties Rishav's stack to this specific role; Paragraph 2 closes with a brief credibility line + "I have attached my resume and other relevant documents for your review."
+- "description": the FULL original text of THIS job from the post (verbatim, including emojis and line breaks). Prefix with "${'<inPostId>'}. <role>\\n" so each entry is self-identifying.
+
+USER CONTEXT (Rishav Tarway):
+- B.Tech CSE (AI & ML), 19 months across 5 internships.
+- Tech: Node.js, React, Next.js, React Native, Python, Java, Go, MongoDB, Redis, AWS, Docker, Gemini API.
+- Highlight projects: Tech Stream Community (React+Socket.io+MongoDB+AWS+Redis, 500+ users), CoinWatch (React Native, Expo, 60fps), ProResume (React Native + Gemini AI ATS resume builder).
+- Open source: WoC 5.0 OpenPrinting (go-avahi) — built OSS-Fuzz infra, 11 fuzz harnesses.
+
+STRICT RULES FOR THE EMAIL DRAFT:
+- NO emojis. No em-dashes as separators. No "passionate" / "leverage" / "synergize" / "thrilled".
+- Concrete: cite Rishav's actual stack and projects (above). Do NOT invent metrics.
+- 2 paragraphs total, each <= 2 sentences.
+
+STRICT RULES FOR THE OUTPUT:
+- Output ONLY a raw JSON ARRAY (no markdown fences, no commentary, no wrapping object).
+- Skip memes / replies / generic announcements.
+- Include a job even when both email AND link are null (set both to null) so the user can manually triage.
+- Keep emojis and formatting INSIDE the "description" field; strip them ONLY from "subject" and "bodyHtml".
+
+POSTS:
+
+${manifest}`;
+
+  const raw = await callAI(prompt, true);
+
+  let result: any = raw;
+  if (result && !Array.isArray(result) && typeof result === 'object') {
+    const found = findFirstArrayInResponse(result);
+    if (found) {
+      console.log(
+        `   ⤷ Batch LLM wrapped array inside object — unwrapping (${found.length} item(s)).`,
+      );
+      result = found;
+    }
+  }
+
+  if (!Array.isArray(result)) {
+    const preview =
+      raw === null || raw === undefined ? String(raw) : JSON.stringify(raw).slice(0, 240);
+    console.warn(
+      `   ⚠️  Batch LLM returned non-array. Raw type=${typeof raw} preview=${preview}`,
+    );
+    return [];
+  }
+
+  // Validate + coerce. Accept legacy keys ("post_index"/"id") just in case the
+  // model improvises slightly off-schema.
+  const validKeys = new Set(posts.map((p) => p.postKey));
+  const cleaned: BatchedJob[] = [];
+  for (const j of result) {
+    if (!j || typeof j !== 'object') continue;
+    const postKey = String(j.postKey || j.post_key || '').trim();
+    if (!validKeys.has(postKey)) continue;
+    cleaned.push({
+      postKey,
+      inPostId: String(j.inPostId || j.id || '1'),
+      company: String(j.company || 'Hiring Team').trim(),
+      role: String(j.role || '').trim(),
+      email: typeof j.email === 'string' && j.email.trim() ? j.email.trim() : null,
+      link: typeof j.link === 'string' && j.link.trim() ? j.link.trim() : null,
+      subject: String(j.subject || `Application for ${j.role || 'role'} - Rishav Tarway (Full Stack Developer)`),
+      bodyHtml: String(j.bodyHtml || j.body_html || ''),
+      description: String(j.description || ''),
+    });
+  }
+  return cleaned;
 }
 
 interface DraftedEmail {
@@ -1323,10 +1475,25 @@ async function main() {
     // chronological order. Feed comes top-down (newest first), so just reverse.
     const ordered = [...windowed].reverse();
 
-    let processed = 0;
+    // ------------------------------------------------------------------
+    // PHASE A — body scraping
+    // Walk every unseen card and pull its inline body. This used to be
+    // entangled with the per-post LLM call inside one big loop; we now
+    // collect first, batch-extract second, ingest third.
+    // ------------------------------------------------------------------
+    type PendingCard = {
+      card: FeedCard;
+      postText: string;
+      detailHeadline: string;
+      postUrl: string;
+      scrapedAt: Date;
+      postedDate: Date;
+    };
+    const pending: PendingCard[] = [];
     let previousPostBody = '';
+
     for (const card of ordered) {
-      if (opts.limit > 0 && processed >= opts.limit) break;
+      if (opts.limit > 0 && pending.length >= opts.limit) break;
 
       // Dedup gate: skip but DO NOT stop — since we walk oldest-first, a
       // duplicate just means we already covered that one earlier.
@@ -1335,7 +1502,9 @@ async function main() {
         continue;
       }
 
-      console.log(`\n[${processed + 1}/${ordered.length}] 🔍 ${card.headline}  (${card.ageLabel || 'no age'})`);
+      console.log(
+        `\n[${pending.length + 1}/${ordered.length}] 🔍 ${card.headline}  (${card.ageLabel || 'no age'})`,
+      );
 
       const scrapedAt = new Date();
       const postedDate = parseRelativeTime(card.ageLabel, scrapedAt);
@@ -1348,10 +1517,6 @@ async function main() {
       // already rendered inline inside its feed card; CSS line-clamp only
       // hides it visually. collectFeedCards() pulls bodyText/cardTitle
       // straight from the card root, so we can skip navigation entirely.
-      // This was the actual fix for the "every post shows the same 1761-
-      // char chunk" bug — clicking/URL-navigating never opened any detail
-      // view, so previously we kept reading whichever card's body happened
-      // to be the largest in the feed, every iteration.
       if (card.bodyText && card.bodyText.length > 50) {
         postText = card.bodyText;
         detailHeadline = card.cardTitle || card.headline;
@@ -1373,9 +1538,7 @@ async function main() {
           }
         } catch (e) {
           console.warn(`   ⚠️  Failed to open post: ${(e as Error).message}`);
-          // Don't write a seen entry on failure — we want to retry next run.
           await returnToFeed(page, feedUrl);
-          processed++;
           continue;
         }
       }
@@ -1429,8 +1592,7 @@ async function main() {
 
       // Hard-warn if this post's body matches the previous one's. That
       // means we're scraping the feed background instead of the post —
-      // exactly the silent failure mode that PRs #5/#7/#8 tried to fix.
-      // Fail loudly so a future regression can't go unnoticed.
+      // the silent failure mode that PRs #5/#7/#10/#12/#13 hunted down.
       if (
         previousPostBody &&
         postText.length === previousPostBody.length &&
@@ -1441,105 +1603,174 @@ async function main() {
             `Modal/post isolation FAILED. Skipping LLM call to avoid wasting a request.`,
         );
         await returnToFeed(page, feedUrl);
-        processed++;
         continue;
       }
       previousPostBody = postText;
 
-      const jobs = await extractJobsFromPost(detailHeadline, postText);
-      console.log(`   🌟 AI extracted ${jobs.length} job(s).`);
-      if (jobs.length === 0) {
+      pending.push({ card, postText, detailHeadline, postUrl, scrapedAt, postedDate });
+      await returnToFeed(page, feedUrl);
+    }
+
+    // ------------------------------------------------------------------
+    // PHASE B — ONE batch LLM call: extract every job AND draft every
+    // application email subject/body in a single round-trip. This is the
+    // "use the AI once for all the jobs" optimization.
+    // ------------------------------------------------------------------
+    console.log(
+      `\n🤖 Batching ${pending.length} post(s) into ONE LLM call (extract + draft)…`,
+    );
+    const batched = pending.length
+      ? await extractAndDraftAll(
+          pending.map((p) => ({
+            postKey: p.card.postKey,
+            headline: p.detailHeadline,
+            body: p.postText,
+          })),
+        )
+      : [];
+    console.log(`   ⤷ Batch returned ${batched.length} job(s) total across ${pending.length} post(s).`);
+
+    const jobsByKey = new Map<string, BatchedJob[]>();
+    for (const j of batched) {
+      if (!jobsByKey.has(j.postKey)) jobsByKey.set(j.postKey, []);
+      jobsByKey.get(j.postKey)!.push(j);
+    }
+
+    // ------------------------------------------------------------------
+    // PHASE C — ingest jobs into the dashboard + create Gmail drafts.
+    // For each pending post, prefer the batched result. If the batch
+    // came back completely empty (whole call failed), fall back to the
+    // legacy per-post extractJobsFromPost + generateEmailContent path so
+    // we still produce something on a flaky LLM run.
+    // ------------------------------------------------------------------
+    for (const p of pending) {
+      let jobs: BatchedJob[] = jobsByKey.get(p.card.postKey) || [];
+
+      if (jobs.length === 0 && batched.length === 0) {
+        // Whole batch failed — fall back to per-post extraction.
         console.log(
-          `      ⤷ 0 jobs likely means: same body across posts (modal not detected) OR LLM rejected for missing email/link. ` +
-            `headline="${detailHeadline || card.headline}" len=${postText.length}`,
+          `   ↩️  Batch empty for "${p.detailHeadline}" — falling back to per-post extraction.`,
         );
+        const fallback = await extractJobsFromPost(p.detailHeadline, p.postText);
+        for (let i = 0; i < fallback.length; i++) {
+          const f = fallback[i];
+          const company = (f.company || 'Hiring Team').trim();
+          const role = (f.role || '').trim();
+          let subject = `Application for ${role || 'role'} - Rishav Tarway (Full Stack Developer)`;
+          let bodyHtml = '';
+          if (f.email && gmail) {
+            const draft = await generateEmailContent(f.text || '', company, role);
+            subject = draft.subject;
+            bodyHtml = draft.body;
+          }
+          jobs.push({
+            postKey: p.card.postKey,
+            inPostId: String(i + 1),
+            company,
+            role,
+            email: f.email || null,
+            link: f.link || null,
+            subject,
+            bodyHtml,
+            description: f.text || '',
+          });
+        }
       }
 
+      console.log(
+        `\n📌 ${p.detailHeadline} → ${jobs.length} job(s) ${jobs.length === 0 ? '(no apply targets)' : ''}`,
+      );
+
       let newJobsThisPost = 0;
-      for (const job of jobs) {
-        const dedupeId = `nas-${card.postKey}-${(job.id || job.company || job.role || '')
-          .toLowerCase()
-          .replace(/[^a-z0-9-]/g, '')}`.slice(0, 120);
-        if (!dedupeId) continue;
+      for (const j of jobs) {
+        const slug = `${j.inPostId}-${(j.company || j.role || '').toLowerCase().replace(/[^a-z0-9-]/g, '')}`;
+        const dedupeId = `nas-${p.card.postKey}-${slug}`.slice(0, 120);
         if (knownIds.has(dedupeId)) {
-          console.log(`   ⏭️  Already tracked: ${job.company || job.role || dedupeId}`);
+          console.log(`   ⏭️  Already tracked: ${j.company || j.role || dedupeId}`);
           continue;
         }
 
-        const company = (job.company || 'Unknown').trim();
-        const role = (job.role || 'Software Engineer').trim();
         const baseRecord = {
-          company,
-          role,
+          company: j.company || 'Hiring Team',
+          role: j.role || 'Software Engineer',
           channel: CHANNEL_LABEL,
           telegramId: dedupeId,
-          appliedDate: scrapedAt.toISOString(),
-          postedDate: postedDate.toISOString(),
-          jobDescription: job.text || '',
-          notes: `Headline: ${detailHeadline}\nLocation: ${job.location || ''}\nAge label: ${card.ageLabel}`,
+          appliedDate: p.scrapedAt.toISOString(),
+          postedDate: p.postedDate.toISOString(),
+          jobDescription: j.description || '',
+          notes: `Headline: ${p.detailHeadline}\nAge label: ${p.card.ageLabel}`,
         };
 
-        if (job.category === 'email-apply' && job.email && gmail) {
-          console.log(`   📧 Drafting email for ${company} → ${job.email}`);
-          const { subject, body } = await generateEmailContent(job.text || '', company, role);
+        if (j.email && gmail && j.bodyHtml) {
+          console.log(`   📧 Drafting email for ${j.company} → ${j.email}`);
           try {
-            await createDraft(gmail, job.email, subject, body);
-            console.log(`      ✅ Draft created: "${subject}"`);
+            await createDraft(gmail, j.email, j.subject, j.bodyHtml);
+            console.log(`      ✅ Draft created: "${j.subject}"`);
           } catch (e) {
             console.warn(`      ⚠️  Draft failed: ${(e as Error).message}`);
           }
           await pushToDashboard({
             ...baseRecord,
-            email: job.email,
-            link: job.link || postUrl,
+            email: j.email,
+            link: j.link || p.postUrl,
             status: 'applied',
             type: 'web',
-            description: `<b>SUBJECT: ${subject}</b><br><br>${body}`,
+            description: `<b>SUBJECT: ${j.subject}</b><br><br>${j.bodyHtml}`,
           });
-        } else if (job.link || job.email) {
+        } else if (j.link || j.email) {
           console.log(
-            `   📎 Saving manual-apply for ${company} → ${job.link || job.email || postUrl}`,
+            `   📎 Saving manual-apply for ${j.company} → ${j.link || j.email || p.postUrl}`,
           );
           await pushToDashboard({
             ...baseRecord,
-            email: job.email || '',
-            link: job.link || postUrl,
+            email: j.email || '',
+            link: j.link || p.postUrl,
             status: 'to_apply',
             type: 'web',
-            description: job.text || '',
+            description: j.description || '',
           });
         } else {
-          continue;
+          // No email AND no link — push for manual triage so the user
+          // still sees it on the dashboard (e.g. "DM" / phone-only posts).
+          console.log(`   📎 Saving manual-triage for ${j.company} (no email/link)`);
+          await pushToDashboard({
+            ...baseRecord,
+            email: '',
+            link: p.postUrl,
+            status: 'to_apply',
+            type: 'web',
+            description: j.description || '',
+          });
         }
+
         knownIds.add(dedupeId);
         newJobsThisPost++;
         totalNewJobs++;
       }
 
-      // Only persist a seen-post record if we actually extracted at least one
-      // job. Posts that returned 0 jobs (likely an extraction problem) stay
-      // unseen so we retry them next run — self-healing.
+      // Only persist a seen-post record if we actually extracted at
+      // least one job. Posts that returned 0 jobs stay unseen so they
+      // retry next run — self-healing.
       if (newJobsThisPost > 0) {
         writeSeenPost({
-          postKey: card.postKey,
-          postUrl,
-          headline: detailHeadline || card.headline,
-          ageLabel: card.ageLabel,
-          postedDate: postedDate.toISOString(),
-          scrapedAt: scrapedAt.toISOString(),
+          postKey: p.card.postKey,
+          postUrl: p.postUrl,
+          headline: p.detailHeadline || p.card.headline,
+          ageLabel: p.card.ageLabel,
+          postedDate: p.postedDate.toISOString(),
+          scrapedAt: p.scrapedAt.toISOString(),
           jobCount: newJobsThisPost,
         });
       } else {
         console.log(
-          `   ⎭️  Not marking "${detailHeadline || card.headline}" as seen (0 jobs) so it retries next run.`,
+          `   ⎭️  Not marking "${p.detailHeadline || p.card.headline}" as seen (0 jobs) so it retries next run.`,
         );
       }
-
-      await returnToFeed(page, feedUrl);
-      processed++;
     }
 
-    console.log(`\n🎯 Done. Processed ${processed} new post(s), added ${totalNewJobs} new job(s).`);
+    console.log(
+      `\n🎯 Done. Processed ${pending.length} new post(s), added ${totalNewJobs} new job(s).`,
+    );
   } finally {
     await browser.close();
   }
