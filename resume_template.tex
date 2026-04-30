@@ -1,65 +1,102 @@
-\documentclass{resume} % Use the custom resume.cls style
+\documentclass[a4paper,9.5pt]{article}
 
-\usepackage[left=0.4 in,top=0.4in,right=0.4 in,bottom=0.4in]{geometry} % Document margins
-\newcommand{\tab}[1]{\hspace{.2667\textwidth}\rlap{#1}} 
-\newcommand{\itab}[1]{\hspace{0em}\rlap{#1}}
+\usepackage[margin=0.35in, top=0.28in, bottom=0.28in]{geometry}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{titlesec}
 \usepackage{hyperref}
-\hypersetup{colorlinks=false, hidelinks}
+\usepackage[T1]{fontenc}
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage{microtype}
 
-\name{Rishav Tarway} % Your name
-\address{+91 70045 44142 \\ Gurugram, Haryana, India} 
-\address{\href{mailto:rishavtarway@gmail.com}{rishavtarway@gmail.com} \\ \href{https://linkedin.com/in/rishav-tarway-fst}{linkedin.com/in/rishav-tarway-fst} \\ \href{https://my-portfolio-five-roan-36.vercel.app/}{my-portfolio-five-roan-36.vercel.app}}
+\definecolor{accentblue}{RGB}{26, 86, 160}
+\definecolor{darkgray}{RGB}{60,60,60}
+
+\hypersetup{colorlinks=true, urlcolor=accentblue, linkcolor=accentblue}
+
+\titleformat{\section}{\normalsize\bfseries\color{accentblue}}{}{0em}{}[\color{accentblue}\titlerule]
+\titlespacing{\section}{0pt}{5pt}{3pt}
+
+\setlist[itemize]{leftmargin=0.9em, itemsep=1pt, topsep=1pt, parsep=0pt, partopsep=0pt}
+
+\pagestyle{empty}
+\setlength{\parskip}{0pt}
 
 \begin{document}
 
-%----------------------------------------------------------------------------------------
-%	OBJECTIVE
-%----------------------------------------------------------------------------------------
+% HEADER
+\noindent\begin{minipage}[c]{0.79\textwidth}%
+{\fontsize{15}{17}\bfseries\color{accentblue} RISHAV TARWAY}\\[1pt]
+{\fontsize{9}{11}\color{darkgray} Full Stack Developer \& AI/ML Engineer}\\[3pt]
+\fontsize{8.2}{10}\selectfont
+\href{mailto:rishavtarway@gmail.com}{rishavtarway@gmail.com}\;|\;
++91-7004544142\;|\;
+Gurugram, Haryana, India\\[2pt]
+\href{https://www.linkedin.com/in/rishav-tarway-fst/}{LinkedIn}\;|\;
+\href{https://github.com/rishavtarway}{GitHub}\;|\;
+\href{https://codeforces.com/profile/NeonMagic}{CodeForces}\;|\;
+\href{https://my-portfolio-five-roan-36.vercel.app/}{Portfolio}%
+\end{minipage}%
+\hfill%
 
-\begin{rSection}{OBJECTIVE}
-{Software Engineer with a focus on AI/ML and Identity Systems, seeking roles that leverage my experience in building large-scale backend architectures and automated testing frameworks.}
-\end{rSection}
+\vspace{8pt}
 
-%----------------------------------------------------------------------------------------
-%	EDUCATION SECTION
-%----------------------------------------------------------------------------------------
+\noindent\begin{minipage}[t]{0.285\textwidth}%
 
-\begin{rSection}{Education}
-{\bf Bachelors of Technology}, Polaris School of Technology \hfill {2023 - 2027}\\
-Specialization: Computer Science \& Engineering (Artificial Intelligence \& Machine Learning) \hfill {8.49 CGPA}
-\end{rSection}
+\section{Achievements}
+{\fontsize{7.8}{10}\selectfont
 
-%----------------------------------------------------------------------------------------
-% TECHINICAL STRENGTHS	
-%----------------------------------------------------------------------------------------
-\begin{rSection}{SKILLS}
-\begin{tabular}{ @{} >{\bfseries}l @{\hspace{6ex}} l }
-Technical Skills & Python, Java, C++, JavaScript, TypeScript, SQL, React, Node.js \\
-Tools & Docker, AWS, GCP, Git, Selenium, Cucumber, MongoDB, PostgreSQL \\
-AI/ML & LLMs, RAG, Prompt Engineering, Computer Vision, OCR \\
-\end{tabular}
-\end{rSection}
-
-%----------------------------------------------------------------------------------------
-%	EXPERIENCE SECTION
-%----------------------------------------------------------------------------------------
-\begin{rSection}{EXPERIENCE}
-{{EXPERIENCE}}
-\end{rSection} 
-
-%----------------------------------------------------------------------------------------
-%	PROJECTS SECTION
-%----------------------------------------------------------------------------------------
-\begin{rSection}{PROJECTS}
-{{PROJECTS}}
-\end{rSection} 
-
-%----------------------------------------------------------------------------------------
-\begin{rSection}{Extra-Curricular Activities} 
+\textbf{\color{accentblue}WoC 5.0 -- OpenPrinting (go-avahi)}\\
+Selected contributor; built full fuzz testing infrastructure for go-avahi.
 \begin{itemize}
-    \item 	Actively contribute to \href{https://wiggly-cyclone-4b3.notion.site/Open-Source-Contributions-196c5ae56b3480ffa68cce470f9fd6cc}{Open Source projects} focusing on security and system automation.
-    \item	Participated in various hackathons and technical workshops focused on Generative AI.
+  \item OSS-Fuzz integration: Dockerfile, project.yaml, build.sh; PR \#15029 in google/oss-fuzz \& PR \#49 in OpenPrinting/fuzzing
+  \item \textbf{11 fuzz harnesses} (PRs \#48, \#49, \#50): stateless, DNS decoding, stateful lifecycle
+  \item \textbf{CWE-401:} Found \& patched 16MB memory leak in DomainSlice (C.free bypass). Merged.
+  \item \textbf{CWE-122:} Found \& fixed heap buffer overflow in DomainNormalize. Merged.
+  \item \textbf{+2.7\% coverage} (now 66.8\%): table-driven unit tests for localhost.go \& closer.go (PR \#12)
+  \item Built run\_fuzzers.sh for local Docker ASAN automation
+  \item Seed corpus for domains/service names with real-world DNS-SD edge cases
 \end{itemize}
-\end{rSection}
+
+\vspace{2pt}
+\textbf{3 Merged PRs -- Stdlib.js}\\
+Type safety \& performance for \textbf{1M+} monthly users.\\[2pt]
+\textbf{2 Merged PRs -- OpenPrinting}\\
+Fixed CUPS driver bugs for enterprise Linux printing.\\[2pt]
+\textbf{1st Runner-Up -- Hack With Uttarakhand}\\
+(Team Code Heist) 36-hr hackathon; AI resume generator with GPT.
+}
+
+\section{Education}
+{\fontsize{8.2}{10.5}\selectfont
+\textbf{\color{accentblue}B.Tech CSE -- AI \& ML}\\
+Polaris School of Tech (Starex Univ.)\\
+\textit{CGPA: 8.85 | 2023--Pursuing | Gurugram}\\[2pt]
+\textbf{Higher Secondary}\\
+DAV Cantt\ |\ \textit{75\% | 2022 | Gaya}\\[2pt]
+\textbf{Secondary}\\
+DAV CRRC\ |\ \textit{80\% | 2020 | Gaya}
+}
+
+\section{Skills}
+{\fontsize{8.2}{10.5}\selectfont
+{{SKILLS}}
+}
+
+\end{minipage}%
+\hspace{0.02\textwidth}%
+\begin{minipage}[t]{0.665\textwidth}%
+
+\section{Experience}
+
+{{EXPERIENCE}}
+
+\section{Projects}
+
+{{PROJECTS}}
+
+\end{minipage}%
 
 \end{document}
