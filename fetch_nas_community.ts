@@ -265,10 +265,96 @@ async function createDraft(gmail: any, toEmail: string, subject: string, htmlBod
 // LLM HELPERS
 // ============================================================================
 
+function parseJsonContent(content: string, source: string): any {
+  const trimmed = content.trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // Strip markdown code fences if present (```json ... ```).
+    const fenceStripped = trimmed
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .trim();
+    try {
+      return JSON.parse(fenceStripped);
+    } catch {
+      /* fall through */
+    }
+    const firstBrace = fenceStripped.indexOf('[');
+    const firstObj = fenceStripped.indexOf('{');
+    const start =
+      firstBrace !== -1 && (firstObj === -1 || firstBrace < firstObj) ? firstBrace : firstObj;
+    const lastBrace = fenceStripped.lastIndexOf(']');
+    const lastObj = fenceStripped.lastIndexOf('}');
+    const end = Math.max(lastBrace, lastObj);
+    if (start === -1 || end === -1) {
+      console.warn(
+        `      ⚠️  ${source}: JSON parse failed, no JSON delimiters found. Raw[0..200]=${trimmed.slice(0, 200)}`,
+      );
+      return null;
+    }
+    try {
+      return JSON.parse(fenceStripped.substring(start, end + 1));
+    } catch (e) {
+      console.warn(
+        `      ⚠️  ${source}: JSON parse failed even after substring. err=${(e as Error).message}. Raw[0..200]=${trimmed.slice(0, 200)}`,
+      );
+      return null;
+    }
+  }
+}
+
 async function callAI(prompt: string, jsonFlag = false): Promise<any> {
+  // PRIMARY: direct Google Gemini API. process_nas_manual.ts uses this same
+  // endpoint and it's known-working. We tried OpenRouter first historically
+  // but the user's OpenRouter account intermittently returns
+  // { error, user_id } envelopes (quota / model-availability), so prefer
+  // direct Gemini whenever GEMINI_API_KEY is set.
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (geminiKey) {
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.2,
+              responseMimeType: jsonFlag ? 'application/json' : 'text/plain',
+            },
+          }),
+        },
+      );
+      const data: any = await response.json();
+      if (data?.error) {
+        console.warn(
+          `      ⚠️  Gemini API error: ${data.error.message || JSON.stringify(data.error).slice(0, 240)}`,
+        );
+        return null;
+      }
+      const content = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!content) {
+        console.warn(
+          `      ⚠️  Gemini: empty content. Top-level keys=${Object.keys(data || {}).join(',')} preview=${JSON.stringify(data).slice(0, 240)}`,
+        );
+        return null;
+      }
+      return jsonFlag ? parseJsonContent(content, 'Gemini') : content;
+    } catch (e) {
+      console.error('   ⚠️  Gemini call failed:', e);
+      // Fall through to OpenRouter.
+    }
+  }
+
+  // FALLBACK: OpenRouter (kept around so the script still works for users
+  // who only have an OpenRouter key configured).
   const openrouterKey = process.env.OPENROUTER_API_KEY;
   if (!openrouterKey) {
-    console.warn('   ⚠️  OPENROUTER_API_KEY not set — skipping AI extraction.');
+    console.warn(
+      '   ⚠️  No GEMINI_API_KEY or OPENROUTER_API_KEY set — skipping AI extraction.',
+    );
     return null;
   }
   try {
@@ -293,55 +379,22 @@ async function callAI(prompt: string, jsonFlag = false): Promise<any> {
       }),
     });
     const data: any = await response.json();
-    const content = data?.choices?.[0]?.message?.content;
-    if (!content) {
+    if (data?.error) {
       console.warn(
-        `      ⚠️  callAI: empty content. Top-level keys=${Object.keys(data || {}).join(',')}`,
+        `      ⚠️  OpenRouter error: ${typeof data.error === 'string' ? data.error : data.error?.message || JSON.stringify(data.error).slice(0, 240)}`,
       );
       return null;
     }
-
-    if (jsonFlag) {
-      const trimmed = content.trim();
-      try {
-        return JSON.parse(trimmed);
-      } catch {
-        // Strip markdown code fences if present (\`\`\`json ... \`\`\`).
-        const fenceStripped = trimmed
-          .replace(/^```(?:json)?\s*/i, '')
-          .replace(/```\s*$/i, '')
-          .trim();
-        try {
-          return JSON.parse(fenceStripped);
-        } catch {
-          /* fall through */
-        }
-        const firstBrace = fenceStripped.indexOf('[');
-        const firstObj = fenceStripped.indexOf('{');
-        const start =
-          firstBrace !== -1 && (firstObj === -1 || firstBrace < firstObj) ? firstBrace : firstObj;
-        const lastBrace = fenceStripped.lastIndexOf(']');
-        const lastObj = fenceStripped.lastIndexOf('}');
-        const end = Math.max(lastBrace, lastObj);
-        if (start === -1 || end === -1) {
-          console.warn(
-            `      ⚠️  callAI: JSON parse failed, no JSON delimiters found. Raw[0..200]=${trimmed.slice(0, 200)}`,
-          );
-          return null;
-        }
-        try {
-          return JSON.parse(fenceStripped.substring(start, end + 1));
-        } catch (e) {
-          console.warn(
-            `      ⚠️  callAI: JSON parse failed even after substring. err=${(e as Error).message}. Raw[0..200]=${trimmed.slice(0, 200)}`,
-          );
-          return null;
-        }
-      }
+    const content = data?.choices?.[0]?.message?.content;
+    if (!content) {
+      console.warn(
+        `      ⚠️  OpenRouter: empty content. Top-level keys=${Object.keys(data || {}).join(',')} preview=${JSON.stringify(data).slice(0, 240)}`,
+      );
+      return null;
     }
-    return content;
+    return jsonFlag ? parseJsonContent(content, 'OpenRouter') : content;
   } catch (e) {
-    console.error('   ⚠️  callAI error:', e);
+    console.error('   ⚠️  OpenRouter call failed:', e);
     return null;
   }
 }
@@ -1700,6 +1753,24 @@ async function main() {
           jobDescription: j.description || '',
           notes: `Headline: ${p.detailHeadline}\nAge label: ${p.card.ageLabel}`,
         };
+
+        // If the batch returned an email but missed/dropped the bodyHtml
+        // (intermittent on Gemini for long batches), fall back to the
+        // legacy per-job draft helper so we ALWAYS get an email body.
+        // Without this the job silently demoted to to_apply AND the post
+        // got marked as seen — so it never retried.
+        if (j.email && gmail && !j.bodyHtml) {
+          console.log(
+            `   ↩️  Batch missed bodyHtml for ${j.company || j.role} — drafting via fallback.`,
+          );
+          try {
+            const draft = await generateEmailContent(j.description || '', j.company || '', j.role || '');
+            j.subject = j.subject || draft.subject;
+            j.bodyHtml = draft.body;
+          } catch (e) {
+            console.warn(`      ⚠️  Fallback draft failed: ${(e as Error).message}`);
+          }
+        }
 
         if (j.email && gmail && j.bodyHtml) {
           console.log(`   📧 Drafting email for ${j.company} → ${j.email}`);
