@@ -538,6 +538,10 @@ app.post('/api/trigger-nas', (req, res) => {
     if (req.body && req.body.headless === true) {
         cliArgs.push('--headless');
     }
+    // Customizable look-back window from the dashboard (hours).
+    if (req.body && typeof req.body.maxAgeHours === 'number' && req.body.maxAgeHours > 0) {
+        cliArgs.push('--max-age-hours', String(req.body.maxAgeHours));
+    }
 
     currentChildProcess = spawn('npx', cliArgs, {
         cwd: process.cwd(),

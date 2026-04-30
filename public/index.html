@@ -722,9 +722,20 @@
 
                     <button id="btn-trigger" class="btn-pill btn-orange" style="width:100%" onclick="startDiscovery()">✨
                         START AUTO-DISCOVERY</button>
-                    <button id="btn-trigger-nas" class="btn-pill"
-                        style="width:100%; margin-top:12px; background:linear-gradient(135deg,#5b21b6,#7c3aed); color:#fff;"
-                        onclick="startNasDiscovery()">🌐 SYNC NAS COMMUNITY</button>
+                    <div style="margin-top:12px; display:flex; gap:6px; align-items:stretch;">
+                        <input id="nas-lookback-amount" type="number" min="1" max="720" value="12"
+                            title="How far back to scrape"
+                            style="flex:0 0 64px; padding:8px 10px; border-radius:14px; border:1px solid var(--border); background:var(--bg); color:var(--text-primary); font-weight:800; text-align:center;" />
+                        <select id="nas-lookback-unit"
+                            title="Unit"
+                            style="flex:0 0 80px; padding:8px 10px; border-radius:14px; border:1px solid var(--border); background:var(--bg); color:var(--text-primary); font-weight:800;">
+                            <option value="hours" selected>HOURS</option>
+                            <option value="days">DAYS</option>
+                        </select>
+                        <button id="btn-trigger-nas" class="btn-pill"
+                            style="flex:1; background:linear-gradient(135deg,#5b21b6,#7c3aed); color:#fff;"
+                            onclick="startNasDiscovery()">🌐 SYNC NAS</button>
+                    </div>
                     <button id="btn-stop" class="btn-pill btn-primary"
                         style="width:100%; margin-top:12px; display:none;" onclick="stopDiscovery()">🛑 STOP
                         PROCESS</button>
@@ -860,6 +871,19 @@
 
         async function startNasDiscovery() {
             const btn = document.getElementById('btn-trigger-nas');
+            const amountEl = document.getElementById('nas-lookback-amount');
+            const unitEl = document.getElementById('nas-lookback-unit');
+            const rawAmount = parseInt(amountEl.value, 10);
+            const amount = Number.isFinite(rawAmount) && rawAmount > 0 ? rawAmount : 12;
+            const unit = unitEl.value === 'days' ? 'days' : 'hours';
+            const hours = unit === 'days' ? amount * 24 : amount;
+
+            // Persist last-used value so the dashboard remembers it across reloads.
+            try {
+                localStorage.setItem('nas-lookback-amount', String(amount));
+                localStorage.setItem('nas-lookback-unit', unit);
+            } catch (_) {}
+
             btn.disabled = true;
             btn.innerHTML = 'WAIT...';
             document.getElementById('btn-stop').style.display = 'block';
@@ -868,17 +892,33 @@
                 await fetch('/api/trigger-nas', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({}),
+                    body: JSON.stringify({ maxAgeHours: hours }),
                 });
             } catch (e) {
                 showToast('Failed to start NAS scraper: ' + e.message);
                 btn.disabled = false;
-                btn.innerHTML = '🌐 SYNC NAS COMMUNITY';
+                btn.innerHTML = '🌐 SYNC NAS';
                 document.getElementById('btn-stop').style.display = 'none';
                 return;
             }
             pollLogs();
         }
+
+        // Restore last-used look-back value on page load.
+        (function restoreNasLookback() {
+            try {
+                const a = localStorage.getItem('nas-lookback-amount');
+                const u = localStorage.getItem('nas-lookback-unit');
+                if (a) {
+                    const el = document.getElementById('nas-lookback-amount');
+                    if (el) el.value = a;
+                }
+                if (u) {
+                    const el = document.getElementById('nas-lookback-unit');
+                    if (el && (u === 'hours' || u === 'days')) el.value = u;
+                }
+            } catch (_) {}
+        })();
 
         async function stopDiscovery() {
             try {
@@ -961,7 +1001,7 @@
                     const nasBtn = document.getElementById('btn-trigger-nas');
                     if (nasBtn) {
                         nasBtn.disabled = false;
-                        nasBtn.innerHTML = '🌐 SYNC NAS COMMUNITY';
+                        nasBtn.innerHTML = '🌐 SYNC NAS';
                     }
                     document.getElementById('btn-stop').style.display = 'none';
                     document.getElementById('btn-stop').disabled = false;
