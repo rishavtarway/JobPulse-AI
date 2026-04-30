@@ -441,94 +441,235 @@ ${safeSlice(jdText, 2000)}`;
 });
 
 // POST /api/resume/optimize — AI optimizes resume for JD (Generates LaTeX)
+//
+// New template (main.tex-style, a4paper 9.5pt, two-column, strict 1 page).
+// We generate THREE sections (Skills + Experience + Projects) split by
+// [SECTION_SEPARATOR] markers. The prompt enforces hard 1-page caps on
+// bullet counts and lengths, and the server re-prompts once if any
+// user-selected keyword is missing from the generated output.
+
+const OPTIMIZE_FORMAT_SPEC = `
+OUTPUT EXACTLY THREE SECTIONS separated by the literal marker [SECTION_SEPARATOR].
+The order must be: SKILLS, then EXPERIENCE, then PROJECTS.
+Do NOT include the word "SKILLS", "EXPERIENCE" or "PROJECTS" as a header — the template already has the headings. Output ONLY the body LaTeX for each section.
+
+═══════════════════════════════════════════════════════════════════
+SECTION 1 — SKILLS (raw LaTeX, MUST use exactly 7 lines, exactly this format):
+\\textbf{Languages:} ...\\\\[1pt]
+\\textbf{Web:} ...\\\\[1pt]
+\\textbf{Mobile:} ...\\\\[1pt]
+\\textbf{DB \\& Cloud:} ...\\\\[1pt]
+\\textbf{Tools:} ...\\\\[1pt]
+\\textbf{AI \\& APIs:} ...\\\\[1pt]
+\\textbf{Core:} ...
+Each line: ≤90 chars after the category. Comma-separated, no trailing period.
+Re-order / swap items so JD-critical tech is FIRST in each line.
+Do NOT invent skills Rishav doesn't have — only re-prioritise real ones from his data.
+
+═══════════════════════════════════════════════════════════════════
+SECTION 2 — EXPERIENCE (raw LaTeX, exactly 5 roles in this order; format per role below):
+Roles (fixed, in this order): IIIT Bangalore — MOSIP | Classplus | TechVastra | Testbook | Franchizerz.
+
+For EACH role, output EXACTLY this block (replace placeholder text only):
+{\\fontsize{8.8}{11}\\selectfont\\textbf{<ROLE TITLE>}\\hfill\\textit{<DATE RANGE>}}\\\\
+{\\fontsize{8.8}{11}\\selectfont\\textbf{\\color{accentblue}<COMPANY>}\\hfill <LOCATION>}
+\\begin{itemize}\\fontsize{8.8}{11}\\selectfont
+  \\item <Bullet 1 tailored to JD, ≤140 chars>
+  \\item <Bullet 2 tailored to JD, ≤140 chars>
+  \\item <Bullet 3 tailored to JD, ≤140 chars>
+\\end{itemize}
+\\vspace{4pt}
+
+Rules for bullets:
+- Exactly 3 bullets per role (no more, no less).
+- Each bullet ≤140 characters.
+- Rewrite to reflect JD priorities, but STAY TRUTHFUL to Rishav's actual work.
+- Use \\textbf{metric}% / \\textbf{Nk+ users} / PR \\#NNNN where real.
+- Start each bullet with a strong action verb.
+
+═══════════════════════════════════════════════════════════════════
+SECTION 3 — PROJECTS (raw LaTeX, exactly 4 projects in this order; format below):
+Projects (fixed): Tech Stream Community | CoinWatch | ProResume | Scholar Track.
+
+For EACH project output EXACTLY:
+{\\fontsize{8.8}{11}\\selectfont\\textbf{<PROJECT NAME>}\\hfill\\href{<LIVE OR GITHUB URL>}{Live | GitHub}}\\\\
+{\\fontsize{8.2}{10}\\selectfont\\textit{<TECH STACK, \\textbullet\\ separated>}}
+\\begin{itemize}\\fontsize{8.8}{11}\\selectfont
+  \\item <Bullet 1 tailored to JD, ≤140 chars>
+  \\item <Bullet 2 tailored to JD, ≤140 chars>
+\\end{itemize}
+\\vspace{4pt}
+
+Rules for projects:
+- Exactly 2 bullets per project.
+- Each bullet ≤140 chars.
+- Links (URLs) are fixed — do not change them.
+
+═══════════════════════════════════════════════════════════════════
+GLOBAL RULES:
+- Output ONLY raw LaTeX across all three sections, split by [SECTION_SEPARATOR].
+- NO markdown fences. NO "## Skills" headers. NO explanation text.
+- Every user-selected keyword MUST appear at least once across the output.
+- If a keyword does not naturally fit any real bullet, weave it into the closest Skills line — do NOT fabricate experience.
+- Total output must fit ONE A4 page using 9.5pt font; stay within the bullet counts above.
+`;
+
+const FIXED_RESUME_FACTS = `
+RISHAV TARWAY — RESUME FACTS (authoritative, do not contradict):
+
+SKILLS (master list — re-prioritise, don't fabricate):
+- Languages: Java, C++, JavaScript, TypeScript, Python, Go
+- Web: React, Next.js, Node.js, Express, Redux, REST APIs, Socket.io
+- Mobile: React Native, Expo SDK 51
+- DB & Cloud: SQL, MongoDB, Redis, Supabase, AWS (S3, CloudFront)
+- Tools: Git, Docker, Selenium, CI/CD, Cucumber BDD, OSS-Fuzz, ASAN
+- AI & APIs: Gemini API, GPT, CoinGecko API, Zustand
+- Core: OOP, DSA, System Design, ML, Fuzz Testing
+
+EXPERIENCE (ordered most-recent first):
+1. Research SWE Intern — IIIT Bangalore — MOSIP — Jul–Oct 2025 — Remote
+   - Selenium + Java + Cucumber BDD test suites for national government biometric identity systems
+   - PR #1370: automated multilingual UI navigation & eSignet IDP verification
+   - PR #543: fixed auto-logout bug during background sync
+2. Software Engineer Intern — Classplus — Nov 2024 – Jan 2025 — Noida
+   - Improved observability 40% via unique request-ID tracing across Express.js middleware
+   - Reduced API latency 25% for 10k+ concurrent users
+   - Async-local-storage error tracking improved production incident MTTR
+3. Full Stack Developer Intern — TechVastra — Sep–Nov 2024 — Remote
+   - Next.js + TypeScript web app with Android platform integration
+   - Boosted front-end perf 30% via React Hooks refactoring / memoisation
+   - Designed RESTful APIs handling 10k+ concurrent user data sync operations
+4. QA Automation Intern — Testbook — Sep–Nov 2024 — Noida
+   - Selenium + ChromeDriver framework, 50% faster test execution
+   - Uncovered 30+ critical bugs; automated regression pipeline
+   - Cut regression testing time, faster sprint delivery cycles
+5. Frontend Developer Intern — Franchizerz — Jul–Dec 2024 — Remote
+   - Built Franchizerz.com UI with React + Next.js + REST APIs, modular OOP
+   - Lighthouse 68 → 92 via route-level code-splitting + lazy loading
+   - HTML5/CSS3 best practices, reusable component library
+
+PROJECTS:
+1. Tech Stream Community (https://techi-spott.vercel.app/) — React, Socket.io, MongoDB, AWS S3/CloudFront, Redis, Chart.js
+   - Real-time chat: 500+ users, 99.9% uptime, live admin dashboard
+   - WebSocket scaling + rate-limiting, 500+ concurrent conns, <100ms latency
+   - Chart.js + Redis pub/sub analytics pipeline
+2. CoinWatch (https://coinwatch-app-seven.vercel.app/) — React Native, Expo SDK 51, TypeScript, Zustand, Supabase, CoinGecko API
+   - Live prices, 7-day sparklines, portfolio P&L, price alerts, multi-currency
+   - FlashList at 60fps; global market cap, BTC dominance, volume stats
+   - Supabase Postgres + Google OAuth cross-device cloud sync
+3. ProResume (https://proresume-eight.vercel.app/) — React Native, Expo SDK 51, TypeScript, Supabase, Gemini API, Zustand
+   - ATS-optimised builder: Gemini scoring, JD tailoring, cover letter gen
+   - Kanban tracker (Saved/Applied/Interview/Rejected/Ghosted) + PDF export
+   - Master profile architecture, Supabase + Google OAuth cross-device sync
+4. Scholar Track App (https://github.com/rishavtarway/Student-Database-System/) — Java, SQL, Docker, CI/CD
+   - 60% query boost via HashMap caching + SQL indexing
+   - Dockerized CI/CD zero-downtime deployments
+`;
+
+function stripFences(s: string): string {
+    return String(s || '').replace(/```latex/ig, '').replace(/```/g, '').trim();
+}
+
+function splitThreeSections(raw: string): { skills: string; experience: string; projects: string } {
+    const parts = String(raw || '').split(/\[SECTION_SEPARATOR\]/i);
+    return {
+        skills: stripFences(parts[0] || ''),
+        experience: stripFences(parts[1] || ''),
+        projects: stripFences(parts[2] || ''),
+    };
+}
+
+function findMissingKeywords(selected: string[], combined: string): string[] {
+    const haystack = combined.toLowerCase();
+    return (selected || []).filter((kw) => {
+        const needle = String(kw || '').trim().toLowerCase();
+        if (!needle) return false;
+        return !haystack.includes(needle);
+    });
+}
+
 app.post('/api/resume/optimize', async (req, res) => {
     const { jdText, selectedKeywords } = req.body;
-    const resumeData = loadResumeData();
+    const kws: string[] = Array.isArray(selectedKeywords) ? selectedKeywords : [];
 
-    console.log(`\n🚀 [Resume Optimization] Re-writing bullet points...`);
-    
-    const prompt = `Act as a senior career coach and LaTeX expert. 
-Given the Job Description below and Rishav Tarway's resume data, rewrite his "Experience" and "Projects" sections into LaTeX code for the FAANGPath resume template.
+    console.log(`\n🚀 [Resume Optimization] Re-writing Skills + Experience + Projects for JD…`);
+    console.log(`   Selected keywords (${kws.length}): ${kws.join(', ')}`);
 
-FORMAT RULES:
-1. EXPERIENCE SECTION:
-   For each job, use the rSubsection environment:
-   \begin{rSubsection}{Company Name}{Date Range}{Role Name}{Location}
-      \item \textbf{High-impact bullet point} weaving in keywords and metrics.
-   \end{rSubsection}
+    const basePrompt = `Act as a senior career coach + LaTeX expert tailoring Rishav Tarway's one-page resume to the JD below.
 
-2. PROJECTS SECTION:
-   Use this format for EACH project item:
-   \item \textbf{Project Title.} {Project description including tech stack and impact. Use quantifiable metrics where possible.}
+${FIXED_RESUME_FACTS}
 
-3. KEYWORDS TO WEAVE IN: ${selectedKeywords.join(', ')}
+KEYWORDS THAT MUST APPEAR (user-selected, ALL must be woven in):
+${kws.length ? kws.map((k) => `- ${k}`).join('\n') : '(none — still rewrite for JD fit)'}
 
-4. OUTPUT REQUIREMENTS:
-   - Provide the EXPERIENCE section first, followed by the PROJECTS section.
-   - Separate them with exactly: [SECTION_SEPARATOR]
-   - Use ONLY valid LaTeX. No markdown code blocks. No extra text.
+JOB DESCRIPTION:
+${safeSlice(jdText || '', 2500)}
 
-Resume Data: ${JSON.stringify(resumeData)}
-JD: ${safeSlice(jdText, 2500)}`;
+${OPTIMIZE_FORMAT_SPEC}`;
 
     try {
-        const result = await callAI([{ role: 'user', content: prompt }]);
-        
-        let exp = "";
-        let proj = "";
-        
-        // Try exact separator
-        if (result.includes('[SECTION_SEPARATOR]')) {
-            const parts = result.split('[SECTION_SEPARATOR]');
-            exp = parts[0] || "";
-            proj = parts[1] || "";
-        } 
-        // Fallback: models might use Markdown headers or just split naturally
-        else if (result.includes('PROJECTS')) {
-            const splitRegex = /(?:#+\s*PROJECTS|\*\*PROJECTS\*\*|PROJECTS\s*SECTION)/i;
-            const parts = result.split(splitRegex);
-            exp = parts[0] || "";
-            proj = parts[1] || "";
-        }
-        else {
-            console.error("AI did not separate sections properly. Raw output:", result);
-            // Put everything in exp as a last resort
-            exp = result;
+        let raw = await callAI([{ role: 'user', content: basePrompt }]);
+        let { skills, experience, projects } = splitThreeSections(raw);
+
+        // Retry ONCE if sections are incomplete
+        if (!skills || !experience || !projects) {
+            console.warn(`   ⚠️  Incomplete sections on first pass (skills=${!!skills}, exp=${!!experience}, proj=${!!projects}) — retrying once…`);
+            raw = await callAI([{ role: 'user', content: basePrompt + '\n\nREMINDER: Output THREE sections separated by [SECTION_SEPARATOR]. Do NOT omit any.' }]);
+            ({ skills, experience, projects } = splitThreeSections(raw));
         }
 
-        // Strip any wrapping markdown code blocks the AI might aggressively wrap it in
-        exp = exp.replace(/```latex/ig, '').replace(/```/g, '').trim();
-        proj = proj.replace(/```latex/ig, '').replace(/```/g, '').trim();
+        // Keyword-coverage check across the combined output — re-prompt once if any missing
+        if (kws.length) {
+            const combined = `${skills}\n${experience}\n${projects}`;
+            const missing = findMissingKeywords(kws, combined);
+            if (missing.length) {
+                console.warn(`   ⚠️  Missing ${missing.length}/${kws.length} keywords: ${missing.join(', ')} — re-prompting for coverage…`);
+                const coveragePrompt = basePrompt + `
 
-        res.json({ experience: exp, projects: proj });
+COVERAGE FAILURE — your previous answer omitted these keywords: ${missing.join(', ')}.
+Re-emit ALL THREE sections, with every one of those keywords naturally woven into the closest real bullet (or Skills line). Do NOT fabricate experience; if a keyword has no real fit, add it to the relevant Skills line.`;
+                const retryRaw = await callAI([{ role: 'user', content: coveragePrompt }]);
+                const retry = splitThreeSections(retryRaw);
+                if (retry.skills && retry.experience && retry.projects) {
+                    skills = retry.skills;
+                    experience = retry.experience;
+                    projects = retry.projects;
+                    const stillMissing = findMissingKeywords(kws, `${skills}\n${experience}\n${projects}`);
+                    if (stillMissing.length) {
+                        console.warn(`   ⚠️  Still missing after retry: ${stillMissing.join(', ')} (proceeding anyway).`);
+                    } else {
+                        console.log(`   ✅ All ${kws.length} keywords covered after retry.`);
+                    }
+                }
+            } else {
+                console.log(`   ✅ All ${kws.length} keywords covered on first pass.`);
+            }
+        }
+
+        res.json({ skills, experience, projects });
     } catch (e: any) {
-        console.log("Optimize Error Triggered:", e.message);
+        console.log('Optimize Error Triggered:', e.message);
         res.status(500).json({ error: 'Failed to optimize resume' });
     }
 });
 
 // POST /api/resume/generate-pdf — Compile LaTeX to PDF via Tectonic
 app.post('/api/resume/generate-pdf', async (req, res) => {
-    const { experience, projects } = req.body;
-    
+    const { skills, experience, projects } = req.body;
+
     const templatePath = path.join(process.cwd(), 'resume_template.tex');
     let template = fs.readFileSync(templatePath, 'utf-8');
 
-    // Robust Sanitize for LaTeX
-    const sanitizeLatex = (str: string): string => {
-        return str
-            .replace(/(?<!\\)%/g, '\\%')
-            .replace(/(?<!\\)&/g, '\\&')
-            .replace(/(?<!\\)\$/g, '\\$')
-            .replace(/(?<!\\)_/g, '\\_')
-            .replace(/(?<!\\)#/g, '\\#');
-    };
-
-    const safeExp = sanitizeLatex(experience || '');
-    const safeProj = sanitizeLatex(projects || '');
+    // The optimise endpoint already emits raw LaTeX per section (with \textbf,
+    // \item, \#, \& etc. already escaped) so we do NOT re-sanitize — doing so
+    // would double-escape valid LaTeX commands and break compilation.
+    const safeSkills = String(skills || '').trim();
+    const safeExp = String(experience || '').trim();
+    const safeProj = String(projects || '').trim();
 
     // Simple placeholder replacement
     const fullLatex = template
+        .replace('{{SKILLS}}', safeSkills)
         .replace('{{EXPERIENCE}}', safeExp)
         .replace('{{PROJECTS}}', safeProj);
 
