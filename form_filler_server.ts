@@ -98,147 +98,237 @@ function getJdContext(url: string): JdEntry | null {
 }
 
 // ── LLM WRAPPER ──────────────────────────────────────────────────
-async function callAI(messages: any[], temperature = 0.1) {
-    const geminiKey = process.env.GEMINI_API_KEY;
-    const geminiModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash-lite';
-    const nvidiaKey = process.env.NVIDIA_API_KEY;
-    const openrouterKey = process.env.OPENROUTER_API_KEY;
+// Per-provider session disable. If a provider returns a long retryDelay
+// (e.g. "limit: 0" daily quota burned), we skip it until that time passes
+// instead of sleeping 60s × N times on every subsequent call.
+const providerDisabledUntil: Record<string, number> = {};
+function isProviderDisabled(name: string): boolean {
+    const until = providerDisabledUntil[name] || 0;
+    return until > Date.now();
+}
+function disableProvider(name: string, ms: number, reason: string) {
+    providerDisabledUntil[name] = Date.now() + ms;
+    console.warn(`   🚫 Disabling ${name} for ${Math.round(ms / 1000)}s (${reason}).`);
+}
 
-    if (!geminiKey && !nvidiaKey && !openrouterKey) {
-        console.warn('⚠️ No AI API Keys found (Gemini / NVIDIA / OpenRouter). Skipping LLM.');
-        return 'UNKNOWN';
+type ChatProvider = {
+    name: string;
+    key: string;
+    models: string[];
+    endpoint: string;
+    extraHeaders?: Record<string, string>;
+};
+
+async function tryOpenAIChatProvider(
+    provider: ChatProvider,
+    prompt: string,
+    temperature: number,
+): Promise<string | null> {
+    if (isProviderDisabled(provider.name)) {
+        console.log(`   ⏭️  Skipping ${provider.name} (session-disabled).`);
+        return null;
     }
+    for (const modelName of provider.models) {
+        try {
+            console.log(`🤖 AI Attempt: Using ${provider.name}:${modelName}...`);
+            const response = await fetch(provider.endpoint, {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${provider.key}`,
+                    'Content-Type': 'application/json',
+                    ...(provider.extraHeaders || {}),
+                },
+                body: JSON.stringify({
+                    model: modelName,
+                    messages: [{ role: 'user', content: prompt }],
+                    temperature,
+                }),
+            });
+            const data: any = await response.json().catch(() => ({}));
 
-    // ── Direct Gemini (preferred) — matches the NAS scraper's pattern.
-    // Handles 429 with backoff based on Google's `retryDelay` so the free-tier
-    // RPM cap doesn't cascade into empty results.
-    if (geminiKey) {
-        const prompt = messages.map((m) => m.content).join('\n\n---\n\n');
-        for (let attempt = 0; attempt < 3; attempt++) {
-            try {
-                console.log(`🤖 AI Attempt: Using gemini:${geminiModel}...`);
-                const response = await fetch(
-                    `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`,
-                    {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            contents: [{ parts: [{ text: prompt }] }],
-                            generationConfig: { temperature },
-                        }),
-                    }
-                );
-                const data: any = await response.json();
-                if (data?.error) {
-                    const status = data.error.status || data.error.code;
-                    const msg: string = data.error.message || JSON.stringify(data.error).slice(0, 240);
-                    const isRateLimit =
-                        status === 'RESOURCE_EXHAUSTED' ||
-                        data.error.code === 429 ||
-                        /quota|rate/i.test(msg);
-                    if (isRateLimit && attempt < 2) {
-                        let waitMs = 35_000;
-                        for (const d of data.error.details || []) {
-                            if (d.retryDelay && typeof d.retryDelay === 'string') {
-                                const m = d.retryDelay.match(/(\d+(?:\.\d+)?)s/);
-                                if (m) waitMs = Math.ceil(parseFloat(m[1]) * 1000) + 2_000;
-                            }
-                        }
-                        const inMsg = msg.match(/retry in ([\d.]+)s/i);
-                        if (inMsg) waitMs = Math.ceil(parseFloat(inMsg[1]) * 1000) + 2_000;
-                        console.warn(`   ⏳ Gemini rate-limited (attempt ${attempt + 1}/3). Sleeping ${(waitMs / 1000).toFixed(1)}s then retrying…`);
-                        await new Promise((r) => setTimeout(r, waitMs));
-                        continue;
-                    }
-                    console.warn(`   ⚠️ Gemini API error: ${msg}`);
-                    break;
-                }
-                const content = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (content && content.trim()) return content.trim();
-                console.warn(`   ⚠️ Gemini returned empty content — falling through.`);
-                break;
-            } catch (e: any) {
-                console.error(`   ❌ Gemini call failed (attempt ${attempt + 1}):`, e.message);
-                break;
+            if (response.status === 401) {
+                console.log(`   ❌ Auth error on ${provider.name}. Disabling provider.`);
+                disableProvider(provider.name, 60 * 60 * 1000, '401 auth');
+                return null;
             }
+            if (response.status === 429 || response.status === 402 || response.status === 503) {
+                // Short disable; don't block the rest of the request on this provider.
+                disableProvider(provider.name, 60 * 1000, `HTTP ${response.status}`);
+                return null;
+            }
+            if (!response.ok) {
+                console.warn(`   ⚠️  ${provider.name}:${modelName} HTTP ${response.status} — trying next model.`);
+                continue;
+            }
+            const content = data.choices?.[0]?.message?.content?.trim();
+            if (content) return content;
+            console.warn(`   ⚠️  ${provider.name}:${modelName} empty content — trying next model.`);
+        } catch (e: any) {
+            console.error(`   ❌ ${provider.name}:${modelName} network error: ${e.message}`);
         }
     }
+    return null;
+}
 
-    const providers = [];
-    if (openrouterKey) {
-        // Only include models confirmed to work on OpenRouter today.
-        // Removed `gemini-2.0-pro-exp-02-05:free` (returns 400 "not a valid
-        // model ID") and `gemma-2-9b-it:free` (returns 404 "No endpoints
-        // found"). Keep the stable flash-lite id.
-        providers.push({
-            name: 'openrouter',
-            key: openrouterKey,
-            models: [
-                "google/gemini-2.0-flash-lite-001",
-            ],
-            endpoint: "https://openrouter.ai/api/v1/chat/completions"
-        });
+// Direct Gemini with AGGRESSIVE bail. Single short retry ONLY if retryDelay <= 10s;
+// if Google returns `limit: 0` or a long retryDelay, we disable Gemini for the
+// rest of the session instead of sleeping 60s twice on every subsequent call.
+async function tryGeminiDirect(prompt: string, temperature: number): Promise<string | null> {
+    if (isProviderDisabled('gemini')) {
+        console.log('   ⏭️  Skipping gemini (session-disabled).');
+        return null;
     }
-    if (nvidiaKey) {
-        providers.push({
-            name: 'nvidia',
-            key: nvidiaKey,
-            models: [
-                "meta/llama-3.1-70b-instruct",
-                "meta/llama-3.1-405b-instruct"
-            ],
-            endpoint: "https://integrate.api.nvidia.com/v1/chat/completions"
-        });
-    }
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (!geminiKey) return null;
+    const geminiModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash-lite';
 
-    const prompt = messages.map(m => m.content).join('\n\n---\n\n');
-
-    for (const provider of providers) {
-        for (const modelName of provider.models) {
-            try {
-                console.log(`🤖 AI Attempt: Using ${provider.name}:${modelName}...`);
-                const response = await fetch(provider.endpoint, {
-                    method: "POST",
-                    headers: {
-                        "Authorization": `Bearer ${provider.key}`,
-                        "Content-Type": "application/json",
-                        ...(provider.name === 'openrouter' ? {
-                            "HTTP-Referer": "http://localhost:3000",
-                            "X-OpenRouter-Title": "JobPulse AI Optimizer"
-                        } : {})
-                    },
+    for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+            console.log(`🤖 AI Attempt: Using gemini:${geminiModel}...`);
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        model: modelName,
-                        messages: [{ role: "user", content: prompt }],
-                        // Keep it simple to avoid 400s
-                    })
-                });
-
-                const data: any = await response.json();
-
-                if (response.status === 401 || (data.error && data.error.code === 401) || (typeof data.error?.message === 'string' && data.error.message.includes('User not found'))) {
-                    console.log(`   ❌ Auth Error on ${provider.name}. Skipping provider.`);
-                    break; // Skip to next provider
+                        contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: { temperature },
+                    }),
+                },
+            );
+            const data: any = await response.json().catch(() => ({}));
+            if (data?.error) {
+                const msg: string = data.error.message || JSON.stringify(data.error).slice(0, 240);
+                const isRateLimit =
+                    data.error.status === 'RESOURCE_EXHAUSTED' ||
+                    data.error.code === 429 ||
+                    /quota|rate/i.test(msg);
+                // Parse retryDelay (e.g. "57.640797955s"). Google also embeds
+                // "limit: 0" inside the message when daily quota is done.
+                let retrySec = 0;
+                for (const d of data.error.details || []) {
+                    if (typeof d.retryDelay === 'string') {
+                        const m = d.retryDelay.match(/(\d+(?:\.\d+)?)s/);
+                        if (m) retrySec = parseFloat(m[1]);
+                    }
                 }
+                const inMsg = msg.match(/retry in ([\d.]+)s/i);
+                if (inMsg) retrySec = Math.max(retrySec, parseFloat(inMsg[1]));
+                const dailyQuotaDone = /limit:\s*0/i.test(msg);
 
-                if (response.status === 429 || response.status === 402 || response.status === 503) {
-                    console.log(`   ⏳ Rate limit on ${modelName}. Switching...`);
+                if (isRateLimit && (dailyQuotaDone || retrySec >= 20)) {
+                    // Don't sleep — disable for session so subsequent resumes also skip it instantly.
+                    const disableMs = dailyQuotaDone
+                        ? 6 * 60 * 60 * 1000 // 6h
+                        : Math.ceil(retrySec * 1000) + 5_000;
+                    disableProvider('gemini', disableMs, dailyQuotaDone ? 'daily quota (limit:0)' : `long retryDelay ${retrySec}s`);
+                    return null;
+                }
+                if (isRateLimit && retrySec > 0 && retrySec <= 10 && attempt === 0) {
+                    const waitMs = Math.ceil(retrySec * 1000) + 1_000;
+                    console.warn(`   ⏳ Gemini short rate-limit (${retrySec}s). One quick retry…`);
+                    await new Promise((r) => setTimeout(r, waitMs));
                     continue;
                 }
-
-                if (!response.ok) {
-                    throw new Error(`Status ${response.status} - ${JSON.stringify(data.error || data)}`);
-                }
-
-                const content = data.choices?.[0]?.message?.content?.trim();
-                if (content) return content;
-                
-                throw new Error("Empty response from model");
-            } catch (e: any) {
-                console.error(`   ❌ Model ${modelName} failed:`, e.message);
-                // Continue to next model
+                console.warn(`   ⚠️  Gemini API error: ${msg.slice(0, 160)}`);
+                return null;
             }
+            const content = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (content && content.trim()) return content.trim();
+            console.warn('   ⚠️  Gemini returned empty content.');
+            return null;
+        } catch (e: any) {
+            console.error(`   ❌ Gemini network error (attempt ${attempt + 1}): ${e.message}`);
+            return null;
         }
+    }
+    return null;
+}
+
+// Primary callAI: try providers in speed/reliability order, fail fast.
+// Groq (free, ~1s, Llama 3.3 70B) → Cerebras (free, ~1s) → NVIDIA 405b →
+// Direct Gemini (short retry only) → OpenRouter.
+async function callAI(messages: any[], temperature = 0.1): Promise<string> {
+    const groqKey = process.env.GROQ_API_KEY;
+    const cerebrasKey = process.env.CEREBRAS_API_KEY;
+    const nvidiaKey = process.env.NVIDIA_API_KEY;
+    const geminiKey = process.env.GEMINI_API_KEY;
+    const openrouterKey = process.env.OPENROUTER_API_KEY;
+
+    if (!groqKey && !cerebrasKey && !nvidiaKey && !geminiKey && !openrouterKey) {
+        console.warn('⚠️  No AI API Keys found. Skipping LLM.');
+        return 'UNKNOWN';
+    }
+    const prompt = messages.map((m) => m.content).join('\n\n---\n\n');
+
+    // 1. Groq — fast free path. Llama 3.3 70B versatile typically <2s e2e.
+    if (groqKey) {
+        const out = await tryOpenAIChatProvider(
+            {
+                name: 'groq',
+                key: groqKey,
+                models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'],
+                endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+            },
+            prompt,
+            temperature,
+        );
+        if (out) return out;
+    }
+
+    // 2. Cerebras — also very fast free tier.
+    if (cerebrasKey) {
+        const out = await tryOpenAIChatProvider(
+            {
+                name: 'cerebras',
+                key: cerebrasKey,
+                models: ['llama-3.3-70b', 'llama3.1-8b'],
+                endpoint: 'https://api.cerebras.ai/v1/chat/completions',
+            },
+            prompt,
+            temperature,
+        );
+        if (out) return out;
+    }
+
+    // 3. NVIDIA NIM. 405b is usually stable, 70b is faster but flakier.
+    if (nvidiaKey) {
+        const out = await tryOpenAIChatProvider(
+            {
+                name: 'nvidia',
+                key: nvidiaKey,
+                models: ['meta/llama-3.1-405b-instruct', 'meta/llama-3.1-70b-instruct'],
+                endpoint: 'https://integrate.api.nvidia.com/v1/chat/completions',
+            },
+            prompt,
+            temperature,
+        );
+        if (out) return out;
+    }
+
+    // 4. Direct Gemini. Single short retry only; bails immediately on daily-quota.
+    if (geminiKey) {
+        const out = await tryGeminiDirect(prompt, temperature);
+        if (out) return out;
+    }
+
+    // 5. OpenRouter — last resort.
+    if (openrouterKey) {
+        const out = await tryOpenAIChatProvider(
+            {
+                name: 'openrouter',
+                key: openrouterKey,
+                models: ['google/gemini-2.0-flash-lite-001'],
+                endpoint: 'https://openrouter.ai/api/v1/chat/completions',
+                extraHeaders: {
+                    'HTTP-Referer': 'http://localhost:3000',
+                    'X-OpenRouter-Title': 'JobPulse AI Optimizer',
+                },
+            },
+            prompt,
+            temperature,
+        );
+        if (out) return out;
     }
 
     return 'UNKNOWN';
@@ -256,8 +346,14 @@ async function askLLM(
     pageUrl: string = '',
     retryCount = 0
 ): Promise<string> {
-    if (!process.env.GEMINI_API_KEY && !process.env.NVIDIA_API_KEY && !OPENROUTER_API_KEY) {
-        console.warn('⚠️ No AI API Key (Gemini / NVIDIA / OpenRouter). Skipping LLM.');
+    if (
+        !process.env.GROQ_API_KEY &&
+        !process.env.CEREBRAS_API_KEY &&
+        !process.env.NVIDIA_API_KEY &&
+        !process.env.GEMINI_API_KEY &&
+        !OPENROUTER_API_KEY
+    ) {
+        console.warn('⚠️ No AI API Key (Groq / Cerebras / NVIDIA / Gemini / OpenRouter). Skipping LLM.');
         return 'UNKNOWN_DATA';
     }
 
@@ -354,7 +450,13 @@ app.get('/api/form-filler/status', (req, res) => {
     res.json({
         status: 'online',
         fields: Object.keys(data).length,
-        llm_available: !!(process.env.GEMINI_API_KEY || process.env.NVIDIA_API_KEY || OPENROUTER_API_KEY),
+        llm_available: !!(
+            process.env.GROQ_API_KEY ||
+            process.env.CEREBRAS_API_KEY ||
+            process.env.NVIDIA_API_KEY ||
+            process.env.GEMINI_API_KEY ||
+            OPENROUTER_API_KEY
+        ),
     });
 });
 
@@ -808,9 +910,11 @@ app.post('/api/resume/generate-pdf', async (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Form-Filler Server running at http://localhost:${PORT}`);
     const aiKeysPresent = [
-        process.env.GEMINI_API_KEY ? 'Gemini' : null,
+        process.env.GROQ_API_KEY ? 'Groq' : null,
+        process.env.CEREBRAS_API_KEY ? 'Cerebras' : null,
         process.env.NVIDIA_API_KEY ? 'NVIDIA' : null,
+        process.env.GEMINI_API_KEY ? 'Gemini' : null,
         OPENROUTER_API_KEY ? 'OpenRouter' : null,
     ].filter(Boolean);
-    console.log(`   AI Status: ${aiKeysPresent.length ? `Enabled (${aiKeysPresent.join(', ')})` : 'Disabled (no keys)'}`);
+    console.log(`   AI Status: ${aiKeysPresent.length ? `Enabled — fallback order: ${aiKeysPresent.join(' → ')}` : 'Disabled (no keys)'}`);
 });
