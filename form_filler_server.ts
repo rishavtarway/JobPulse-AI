@@ -256,8 +256,8 @@ async function askLLM(
     pageUrl: string = '',
     retryCount = 0
 ): Promise<string> {
-    if (!OPENROUTER_API_KEY) {
-        console.warn('⚠️ No AI API Key. Skipping LLM.');
+    if (!process.env.GEMINI_API_KEY && !process.env.NVIDIA_API_KEY && !OPENROUTER_API_KEY) {
+        console.warn('⚠️ No AI API Key (Gemini / NVIDIA / OpenRouter). Skipping LLM.');
         return 'UNKNOWN_DATA';
     }
 
@@ -351,7 +351,11 @@ app.get('/api/form-filler/cache', (req, res) => {
 // GET /api/form-filler/status — check if online
 app.get('/api/form-filler/status', (req, res) => {
     const data = loadResumeData();
-    res.json({ status: 'online', fields: Object.keys(data).length, llm_available: !!(OPENROUTER_API_KEY) });
+    res.json({
+        status: 'online',
+        fields: Object.keys(data).length,
+        llm_available: !!(process.env.GEMINI_API_KEY || process.env.NVIDIA_API_KEY || OPENROUTER_API_KEY),
+    });
 });
 
 // GET /api/form-filler/jd-context — does the server have JD context for THIS tab?
@@ -770,5 +774,10 @@ app.post('/api/resume/generate-pdf', async (req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Form-Filler Server running at http://localhost:${PORT}`);
-    console.log(`   AI Status: ${OPENROUTER_API_KEY ? 'Enabled' : 'Disabled (Key missing)'}`);
+    const aiKeysPresent = [
+        process.env.GEMINI_API_KEY ? 'Gemini' : null,
+        process.env.NVIDIA_API_KEY ? 'NVIDIA' : null,
+        OPENROUTER_API_KEY ? 'OpenRouter' : null,
+    ].filter(Boolean);
+    console.log(`   AI Status: ${aiKeysPresent.length ? `Enabled (${aiKeysPresent.join(', ')})` : 'Disabled (no keys)'}`);
 });

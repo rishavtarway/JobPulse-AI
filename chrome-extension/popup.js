@@ -362,7 +362,18 @@ function openAndFill() {
     showStatus("🚀 Opening format...", "ok");
 }
 
+// Global status line for Form Filler operations. Always writes to the
+// always-visible #statusMsg (bottom of popup) — NOT to #jd-status (which
+// lives inside #mode-resume and is display:none in Form Filler mode).
+// Resume-booster flows write directly to #jd-status themselves.
 function showStatus(msg, type) {
-    const status = document.getElementById('jd-status');
-    if (status) status.textContent = msg;
+    const el = document.getElementById('statusMsg');
+    if (!el) return;
+    el.className = `status-msg ${type || ''}`.trim();
+    el.textContent = msg;
+    clearTimeout(showStatus._timer);
+    showStatus._timer = setTimeout(() => {
+        el.textContent = '';
+        el.className = 'status-msg';
+    }, 3000);
 }
