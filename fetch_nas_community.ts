@@ -634,6 +634,13 @@ interface FeedCard {
   ageLabel: string;
   postKey: string; // stable hash of headline + snippet
   postUrl: string; // direct URL of the post (e.g. .../community#post-8142fc33)
+  // Full inline post body extracted directly from the feed card. nas.com
+  // renders the entire post text inside the card itself (CSS line-clamp
+  // only hides it visually — the DOM still has all of it), so we don't
+  // need to navigate or open a modal to read it. If empty, the caller
+  // falls back to the (legacy) navigate-then-extract path.
+  bodyText: string;
+  cardTitle: string;
 }
 
 /**
@@ -767,7 +774,38 @@ async function collectFeedCards(page: Page): Promise<FeedCard[]> {
         }
       }
 
-      cards.push({ index, headline, snippet, ageLabel, postKey, postUrl });
+      // Pull the inline post title + body straight out of the card. The
+      // nas.com feed renders these as:
+      //   <div class="text-heading-sm font-semibold ...">{title}</div>
+      //   <div class="text-para-sm whitespace-pre-line line-clamp-2 ...">{body}</div>
+      // CSS clamping is purely visual; innerText still returns the full
+      // text. This means we never have to navigate / open a modal.
+      let cardTitle = '';
+      const titleEl = root.querySelector<HTMLElement>(
+        '[class*="text-heading-sm"][class*="font-semibold"]',
+      );
+      if (titleEl) {
+        cardTitle = (titleEl.innerText || '').trim().split('\n')[0];
+      }
+
+      let bodyText = '';
+      const bodyEl = root.querySelector<HTMLElement>(
+        '[class*="text-para-sm"][class*="whitespace-pre-line"]',
+      );
+      if (bodyEl) {
+        // Strip the inline "...See more" expand-affordance — it's a sibling
+        // <div> overlay rendered absolutely; innerText would otherwise
+        // append "...See more" at the end of every body.
+        const clone = bodyEl.cloneNode(true) as HTMLElement;
+        clone
+          .querySelectorAll('[class*="absolute"][class*="cursor-pointer"]')
+          .forEach((n) => n.remove());
+        bodyText = (clone.innerText || '').trim();
+        // Belt-and-suspenders cleanup if the affordance survived the strip.
+        bodyText = bodyText.replace(/\s*\.{3,}\s*See more\s*$/i, '').trim();
+      }
+
+      cards.push({ index, headline, snippet, ageLabel, postKey, postUrl, bodyText, cardTitle });
     });
 
     // Hand back the data + a way to re-find each card by index later.
@@ -1305,28 +1343,41 @@ async function main() {
       let navigatedTo: string | null = null;
       let postText = '';
       let detailHeadline = '';
-      try {
-        // Prefer direct-URL navigation (the click-to-open path proved
-        // unreliable: the SPA didn't always re-render after our synthetic
-        // click, leaving us scraping the feed background). If we don't
-        // have a postUrl on the card, fall back to clickIntoCard.
-        if (card.postUrl) {
-          const result = await openPostByUrl(page, card.postUrl);
-          navigatedTo = result.navigatedTo;
-          postText = result.postText;
-          detailHeadline = result.headline || card.headline;
-        } else {
-          const result = await clickIntoCard(page, card.index);
-          navigatedTo = result.navigatedTo;
-          postText = result.postText;
-          detailHeadline = result.headline || card.headline;
+
+      // PRIMARY PATH (nas.com 2026 layout): every post's full body is
+      // already rendered inline inside its feed card; CSS line-clamp only
+      // hides it visually. collectFeedCards() pulls bodyText/cardTitle
+      // straight from the card root, so we can skip navigation entirely.
+      // This was the actual fix for the "every post shows the same 1761-
+      // char chunk" bug — clicking/URL-navigating never opened any detail
+      // view, so previously we kept reading whichever card's body happened
+      // to be the largest in the feed, every iteration.
+      if (card.bodyText && card.bodyText.length > 50) {
+        postText = card.bodyText;
+        detailHeadline = card.cardTitle || card.headline;
+      } else {
+        // FALLBACK PATH: if the inline-body extraction failed for this
+        // card (DOM changed, layout variant, etc.), fall back to the old
+        // navigate-then-extract path.
+        try {
+          if (card.postUrl) {
+            const result = await openPostByUrl(page, card.postUrl);
+            navigatedTo = result.navigatedTo;
+            postText = result.postText;
+            detailHeadline = result.headline || card.headline;
+          } else {
+            const result = await clickIntoCard(page, card.index);
+            navigatedTo = result.navigatedTo;
+            postText = result.postText;
+            detailHeadline = result.headline || card.headline;
+          }
+        } catch (e) {
+          console.warn(`   ⚠️  Failed to open post: ${(e as Error).message}`);
+          // Don't write a seen entry on failure — we want to retry next run.
+          await returnToFeed(page, feedUrl);
+          processed++;
+          continue;
         }
-      } catch (e) {
-        console.warn(`   ⚠️  Failed to open post: ${(e as Error).message}`);
-        // Don't write a seen entry on failure — we want to retry next run.
-        await returnToFeed(page, feedUrl);
-        processed++;
-        continue;
       }
 
       const postUrl = navigatedTo || card.postUrl || `${feedUrl}#post-${card.postKey}`;
