@@ -828,6 +828,13 @@ ${OPTIMIZE_FORMAT_SPEC}`;
         // Retry ONCE if sections are incomplete. Objective is allowed to be
         // empty on the first pass (old LLM cache / format drift) — we'll
         // re-prompt for it with the explicit reminder below.
+        //
+        // IMPORTANT: We MUST NOT unconditionally overwrite on retry.
+        // If the LLM returned 3 sections (back-compat), objective is ''
+        // but skills / experience / projects are potentially good. Only
+        // overwrite each section if the retry produced a non-empty value;
+        // otherwise keep the first-pass value. Mirrors the coverage-retry
+        // pattern below.
         const firstPassIncomplete =
             !objective || !skills || !experience || !projects;
         if (firstPassIncomplete) {
@@ -842,7 +849,11 @@ ${OPTIMIZE_FORMAT_SPEC}`;
                         '\n\nREMINDER: Output EXACTLY FOUR sections separated by [SECTION_SEPARATOR] — OBJECTIVE, SKILLS, EXPERIENCE, PROJECTS. Do NOT omit any. The OBJECTIVE is a single sentence opener that names the JD role.',
                 },
             ]);
-            ({ objective, skills, experience, projects } = splitFourSections(raw));
+            const retried = splitFourSections(raw);
+            objective = retried.objective || objective;
+            skills = retried.skills || skills;
+            experience = retried.experience || experience;
+            projects = retried.projects || projects;
         }
 
         // Keyword-coverage check across the combined output — re-prompt once if any missing
