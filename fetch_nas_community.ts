@@ -577,7 +577,11 @@ function extractApplyUrl(text: string): string {
     text.matchAll(/https?:\/\/[^\s<>"'()]+/gi),
   ).map((m) => m[0].replace(/[),.\]}>;:!?]+$/g, ''));
   if (!urls.length) return '';
-  const blacklisted = (u: string) => /(^|\.)nas\.(com|io)(\/|$)/i.test(u);
+  // Match nas.com/nas.io whether the URL begins with the host (after
+  // ://, where the preceding char is '/') or whether nas is a subdomain
+  // (preceded by '.'). The original `(^|\.)` form failed on plain
+  // `https://nas.com/...` and let NAS feed URLs through as candidates.
+  const blacklisted = (u: string) => /(^|[/.])nas\.(com|io)(\/|$)/i.test(u);
   const candidates = urls.filter((u) => !blacklisted(u));
   if (!candidates.length) return '';
 
