@@ -649,15 +649,14 @@ SECTION 3 — EXPERIENCE (raw LaTeX, exactly 5 roles in this order; format per r
 Roles (fixed, in this order): IIIT Bangalore — MOSIP | Classplus | TechVastra | Testbook | Franchizerz.
 
 For EACH role, output EXACTLY this block (replace placeholder text only):
-{\\fontsize{8.8}{11}\\selectfont\\textbf{<ROLE TITLE>}\\hfill\\textit{<DATE RANGE>}}\\\\
-{\\fontsize{8.8}{11}\\selectfont\\textbf{\\color{accentblue}<COMPANY>}\\hfill <LOCATION>}
-\\begin{itemize}\\fontsize{8.8}{11}\\selectfont
-  \\item <Bullet 1 tailored to JD, <=140 chars>
-  \\item <Bullet 2 tailored to JD, <=140 chars>
-  \\item <Bullet 3 tailored to JD, <=140 chars>
-  \\item <Bullet 4 tailored to JD, <=140 chars>
+{\\fontsize{8.4}{10.4}\\selectfont\\textbf{<ROLE TITLE>}\\hfill\\textit{<DATE RANGE>}}\\\\
+{\\fontsize{8.4}{10.4}\\selectfont\\textbf{\\color{accentblue}<COMPANY>}\\hfill <LOCATION>}
+\\begin{itemize}\\fontsize{8.4}{10.4}\\selectfont
+  \\item <Bullet 1 tailored to JD, <=130 chars, ONE LINE>
+  \\item <Bullet 2 tailored to JD, <=130 chars, ONE LINE>
+  \\item <Bullet 3 tailored to JD, <=130 chars, ONE LINE>
 \\end{itemize}
-\\vspace{2pt}
+\\vspace{1pt}
 
 BULLET-WRITING TEMPLATES — every bullet MUST follow one of these three shapes:
   Template A (metric-first):  "Achieved <X\\%> <outcome> for <who / feature> using <tech A>, <tech B>, and <tech C>."
@@ -665,9 +664,10 @@ BULLET-WRITING TEMPLATES — every bullet MUST follow one of these three shapes:
   Template C (build-verb):    "<Built | Developed | Shipped> <thing> that <did A, B, and C> using <X>, <Y>, and <Z>."
 
 Rules for bullets:
-- Exactly 4 bullets per role (no more, no less). We need the page filled.
-- Each bullet <=140 characters.
-- Rotate templates A/B/C across the 4 bullets of a role so they don't all look the same.
+- Exactly 3 bullets per role (no more, no less). The page is dense; 5 roles x 3 bullets fits one page.
+- Each bullet MUST stay on a single line. Hard cap <=125 characters; aim for ~110.
+  If the bullet is borderline, DROP adjectives / fillers ('successfully', 'effectively', 'in order to', 'various') instead of letting it wrap to two lines.
+- Rotate templates A/B/C across the 3 bullets of a role so they don't all look the same.
 - Rewrite to reflect JD priorities, but STAY TRUTHFUL to Rishav's actual work (no fabricated companies, dates, or projects).
 - Always include a concrete metric (\\textbf{40\\%}, \\textbf{10k+ users}, PR \\#1234, \\textbf{60fps}, etc.) — use bold for the metric.
 - Use \\textbf{metric\\%} / \\textbf{Nk+ users} / PR \\#NNNN (ALWAYS escape \\# and \\%).
@@ -679,13 +679,13 @@ SECTION 4 — PROJECTS (raw LaTeX, exactly 4 projects in this order; format belo
 Projects (fixed): Tech Stream Community | CoinWatch | ProResume | Scholar Track.
 
 For EACH project output EXACTLY:
-{\\fontsize{8.8}{11}\\selectfont\\textbf{<PROJECT NAME>}\\hfill\\href{<LIVE OR GITHUB URL>}{Live | GitHub}}\\\\
-{\\fontsize{8.2}{10}\\selectfont\\textit{<TECH STACK, \\textbullet\\ separated>}}
-\\begin{itemize}\\fontsize{8.8}{11}\\selectfont
-  \\item <Bullet 1 tailored to JD, <=150 chars>
-  \\item <Bullet 2 tailored to JD, <=150 chars>
+{\\fontsize{8.4}{10.4}\\selectfont\\textbf{<PROJECT NAME>}\\hfill\\href{<LIVE OR GITHUB URL>}{Live | GitHub}}\\\\
+{\\fontsize{7.8}{9.6}\\selectfont\\textit{<TECH STACK, \\textbullet\\ separated>}}
+\\begin{itemize}\\fontsize{8.4}{10.4}\\selectfont
+  \\item <Bullet 1 tailored to JD, <=125 chars, ONE LINE>
+  \\item <Bullet 2 tailored to JD, <=125 chars, ONE LINE>
 \\end{itemize}
-\\vspace{2pt}
+\\vspace{1pt}
 
 PROJECT-BULLET TEMPLATE — follow this shape:
   "<Short Action Verb> <what> that <does A, B, and C> using <X>, <Y>, and <Z>. <Quantified success or adoption metric>."
