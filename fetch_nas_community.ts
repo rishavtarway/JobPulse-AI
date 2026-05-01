@@ -376,14 +376,27 @@ async function callAI(prompt: string, jsonFlag = false): Promise<any> {
         }),
       });
       const data: any = await response.json().catch(() => ({}));
-      // Mirror tryOpenAIChatProvider() in form_filler_server.ts: disable
-      // Groq for the rest of the run on auth errors (401 / invalid key) or
-      // billing issues (402) so we don't waste a round-trip per post. Short
-      // disable on 429 / 503 so the next call skips Groq too.
-      if (response.status === 401 || response.status === 402) {
-        nasDisable('groq', 60 * 60 * 1000, `HTTP ${response.status}`);
-      } else if (response.status === 429 || response.status === 503) {
-        nasDisable('groq', 60_000, `HTTP ${response.status}`);
+      // Mirror tryOpenAIChatProvider() in form_filler_server.ts: long
+      // disable on auth (401) / payment (402) errors so we don't waste
+      // a round-trip per post. For 429 honour Retry-After (clamped 3-30s)
+      // — Groq's free tier is per-minute, so disabling for a flat 60s
+      // pushes the next call to the slow NVIDIA path even when Groq
+      // would have been ready in 4-5s.
+      if (response.status === 401) {
+        nasDisable('groq', 60 * 60 * 1000, 'HTTP 401 auth');
+      } else if (response.status === 402) {
+        nasDisable('groq', 6 * 60 * 60 * 1000, 'HTTP 402 quota');
+      } else if (response.status === 429) {
+        const retryAfterHeader = response.headers.get('retry-after') || '';
+        let retrySec = parseFloat(retryAfterHeader);
+        if (!Number.isFinite(retrySec) || retrySec <= 0) {
+          const embedded = (data?.error?.message || '').match(/(\d+(?:\.\d+)?)\s*s(?:ec(?:ond)?s?)?\b/i);
+          retrySec = embedded ? parseFloat(embedded[1]) : 8;
+        }
+        retrySec = Math.max(3, Math.min(30, retrySec));
+        nasDisable('groq', Math.ceil(retrySec * 1000), `HTTP 429 rate-limit (${retrySec}s)`);
+      } else if (response.status === 503) {
+        nasDisable('groq', 30_000, 'HTTP 503');
       } else if (!response.ok || data?.error) {
         const errMsg = typeof data?.error === 'string'
           ? data.error
