@@ -1185,30 +1185,64 @@ function visibleLen(s: string): number {
     return v.length;
 }
 
+// Quick LaTeX brace-balance check. We only need to detect unclosed
+// `{...}` groups produced by a regex trim cutting through a LaTeX
+// command. Backslash-escaped `\{` / `\}` (literal braces in the
+// rendered PDF) are not part of the structural balance.
+function bracesBalanced(s: string): boolean {
+    let depth = 0;
+    for (let i = 0; i < s.length; i++) {
+        const c = s[i];
+        if (c === '\\') { i++; continue; } // skip the next char (escape)
+        if (c === '{') depth++;
+        else if (c === '}') {
+            depth--;
+            if (depth < 0) return false;
+        }
+    }
+    return depth === 0;
+}
+
 function shortenBullet(line: string, cap: number): string {
     // Preserve trailing punctuation and the leading "\item " marker.
     const m = line.match(/^(\s*\\item\s+)(.*?)(\s*)$/);
     if (!m) return line;
     const prefix = m[1];
-    let body = m[2];
+    const original = m[2];
+    let body = original;
     if (visibleLen(prefix + body) <= cap) return line;
     // Remove the trailing period, drop padding clauses, restore the period.
     const hadPeriod = /[.!?]$/.test(body);
     if (hadPeriod) body = body.replace(/[.!?]+$/, '');
     // Drop one trailing keyword-padding clause at a time and re-check.
+    // Each pattern's character class excludes `{` and `}` so we can
+    // never trim across a LaTeX brace boundary (which would orphan the
+    // opening `{` of e.g. `\textbf{...}` and crash Tectonic).
     const padPatterns: RegExp[] = [
-        /,?\s*with\s+a\s+focus\s+on\s+[^.,;]+$/i,
-        /,?\s*ensuring\s+[^.,;]+$/i,
-        /,?\s*to\s+ensure\s+[^.,;]+$/i,
-        /,?\s*for\s+[A-Z][^.,;]{8,}$/, // trailing "for <ProperNoun phrase>"
-        /,\s*and\s+[A-Z][^.,;]{4,}$/,  // trailing ", and Capitalized..."
+        /,?\s*with\s+a\s+focus\s+on\s+[^.,;{}]+$/i,
+        /,?\s*ensuring\s+[^.,;{}]+$/i,
+        /,?\s*to\s+ensure\s+[^.,;{}]+$/i,
+        /,?\s*for\s+[A-Z][^.,;{}]{8,}$/, // trailing "for <ProperNoun phrase>"
+        /,\s*and\s+[A-Z][^.,;{}]{4,}$/,  // trailing ", and Capitalized..."
     ];
     let guard = 6;
     while (visibleLen(prefix + body) > cap && guard-- > 0) {
         let trimmed = false;
         for (const re of padPatterns) {
             if (re.test(body)) {
-                body = body.replace(re, '').replace(/[\s,]+$/, '');
+                const candidate = body.replace(re, '').replace(/[\s,]+$/, '');
+                // Defence-in-depth: if a trim somehow leaves unbalanced
+                // braces (e.g. a future regex change accidentally
+                // consumes a `}`), abandon further trimming and emit
+                // the longest balanced prefix we already had — better a
+                // wrapping bullet than a broken PDF.
+                if (!bracesBalanced(candidate)) {
+                    body = original.replace(/[.!?]+$/, '');
+                    trimmed = false;
+                    guard = 0;
+                    break;
+                }
+                body = candidate;
                 trimmed = true;
                 break;
             }
