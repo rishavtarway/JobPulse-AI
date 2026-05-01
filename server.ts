@@ -317,7 +317,7 @@ app.get('/api/applications', (req, res) => {
 app.post('/api/applications', (req, res) => {
     const { 
         company, role, email, link, description, 
-        jobDescription,
+        jobDescription, postUrl,
         status = 'applied', telegramId, channel, 
         type = 'telegram', appliedDate, _timestamp 
     } = req.body;
@@ -332,6 +332,7 @@ app.post('/api/applications', (req, res) => {
         role: role || 'Software Engineer',
         email: email || '',
         link: link || '',
+        postUrl: postUrl || '',
         description: description || '',
         jobDescription: jobDescription || '',
         appliedDate: appliedDate || new Date().toISOString(),

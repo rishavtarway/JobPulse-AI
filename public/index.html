@@ -1124,22 +1124,23 @@
                             <p class="job-meta">${item.role} @ ${name}</p>
                             
                             <div style="font-size:10px; font-weight:800; color:var(--text-muted); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.05em;">
-                                ${item.type === 'telegram' && item.status === 'applied' ? '📧 Sent Email Draft' : '📝 Job Description'}
+                                ${item.status === 'applied' ? '📧 Drafted Email (in your Gmail)' : '📝 Job Description'}
                             </div>
                             <div class="job-desc">${(item.description || item.text || 'Discovering metadata...').replace(/\n/g, '<br>')}</div>
 
-                            ${(item.jobDescription || (item.type === 'manual' && item.description)) ? `
+                            ${(item.jobDescription && item.status === 'applied') ? `
                             <div class="job-post-toggle" onclick="event.stopPropagation(); toggleJobPost(this)">
                                 <span>🔍 View Original Job Post</span>
                                 <span class="chevron">▼</span>
                             </div>
                             <div class="original-job-post" onclick="event.stopPropagation()">
-                                ${item.jobDescription || item.description || 'Source text not available.'}
+                                ${(item.jobDescription || '').replace(/\n/g, '<br>')}
                             </div>
                             ` : ''}
                             
-                            <div style="margin-top:24px; display:flex; gap:12px; align-items:center;">
+                            <div style="margin-top:24px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
                                 ${item.link ? `<a href="${item.link}" target="_blank" onclick="event.stopPropagation()" class="btn-pill btn-orange" style="padding:10px 24px; font-size:12px;">APPLY ON PORTAL</a>` : ''}
+                                ${(!item.link && item.postUrl) ? `<a href="${item.postUrl}" target="_blank" onclick="event.stopPropagation()" class="btn-pill" style="padding:10px 24px; font-size:12px; background:rgba(255,255,255,0.08); color:var(--text-muted);">VIEW POST ON NAS</a>` : ''}
                                 <span style="font-size:10px; font-weight:700; color:var(--text-muted); margin-left:auto;">ID: ${item.telegramId || 'AUTO'}</span>
                             </div>
                         </div>
