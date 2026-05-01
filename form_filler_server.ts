@@ -652,9 +652,9 @@ For EACH role, output EXACTLY this block (replace placeholder text only):
 {\\fontsize{8.4}{10.4}\\selectfont\\textbf{<ROLE TITLE>}\\hfill\\textit{<DATE RANGE>}}\\\\
 {\\fontsize{8.4}{10.4}\\selectfont\\textbf{\\color{accentblue}<COMPANY>}\\hfill <LOCATION>}
 \\begin{itemize}\\fontsize{8.4}{10.4}\\selectfont
-  \\item <Bullet 1 tailored to JD, <=130 chars, ONE LINE>
-  \\item <Bullet 2 tailored to JD, <=130 chars, ONE LINE>
-  \\item <Bullet 3 tailored to JD, <=130 chars, ONE LINE>
+  \\item <Bullet 1 tailored to JD, <=125 chars, ONE LINE>
+  \\item <Bullet 2 tailored to JD, <=125 chars, ONE LINE>
+  \\item <Bullet 3 tailored to JD, <=125 chars, ONE LINE>
 \\end{itemize}
 \\vspace{1pt}
 
@@ -693,7 +693,7 @@ Example: "Built a 60fps crypto portfolio tracker that supports live prices, mult
 
 Rules for projects:
 - Exactly 2 bullets per project (tight — the page is already dense).
-- Each bullet <=150 chars.
+- Each bullet MUST stay on a single line. Hard cap <=125 characters; aim for ~110. Drop adjectives before letting it wrap.
 - Links (URLs) are fixed, do not change them.
 - Bullet 1 MUST follow the PROJECT-BULLET TEMPLATE (build-verb + tech stack + quantified success).
 - Bullet 2 may be metric-first (Template A) or leadership (Template B) style.
