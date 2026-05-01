@@ -1009,9 +1009,12 @@ function pickLocation(llmLocation: string): string {
     if (!cleaned) return DEFAULT_LOCATION;
     if (/^default$/i.test(cleaned)) return DEFAULT_LOCATION;
     // Must look like "<word>[, …]" with at least 2 chars total, no
-    // LaTeX commands, max 60 chars (the header has limited width).
+    // LaTeX commands or special chars (this string is injected raw into
+    // the header so any unescaped `&`, `#`, `%`, `$`, `_`, `^`, `~`,
+    // `\`, `{`, `}` would silently break Tectonic compilation), max 60
+    // chars (the header has limited width).
     if (cleaned.length > 60) return DEFAULT_LOCATION;
-    if (/[\\{}]/.test(cleaned)) return DEFAULT_LOCATION;
+    if (/[\\{}&#%$_^~]/.test(cleaned)) return DEFAULT_LOCATION;
     if (!/[A-Za-z]/.test(cleaned)) return DEFAULT_LOCATION;
     return cleaned;
 }
