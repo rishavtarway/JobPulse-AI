@@ -622,9 +622,22 @@ ${safeSlice(jdText, 2000)}`;
 // is missing from the generated output.
 
 const OPTIMIZE_FORMAT_SPEC = `
-OUTPUT EXACTLY FOUR SECTIONS separated by the literal marker [SECTION_SEPARATOR].
-The order must be: OBJECTIVE, then SKILLS, then EXPERIENCE, then PROJECTS.
-Do NOT include the words "OBJECTIVE", "SKILLS", "EXPERIENCE" or "PROJECTS" as headers — the template already has the headings. Output ONLY the body LaTeX for each section.
+OUTPUT EXACTLY FIVE SECTIONS separated by the literal marker [SECTION_SEPARATOR].
+The order must be: LOCATION, then OBJECTIVE, then SKILLS, then EXPERIENCE, then PROJECTS.
+Do NOT include the words "LOCATION", "OBJECTIVE", "SKILLS", "EXPERIENCE" or "PROJECTS" as headers — the template already has the headings (LOCATION is just used to overwrite the header city). Output ONLY the body LaTeX for each section.
+
+═══════════════════════════════════════════════════════════════════
+SECTION 0 — LOCATION (one short line, NOT LaTeX, just plain text).
+
+Read the JD. Decide where Rishav should claim he's based for THIS application:
+- If the JD says the role is in a specific city (e.g. "Hyderabad", "Bengaluru / Bangalore", "Mumbai", "Pune", "Chennai", "Gurugram", "Noida", "Delhi NCR", etc.) AND it implies on-site / hybrid / "must be based in" / "located in", emit the city as: "<City>, <State>, India" using the canonical state (Hyderabad → Telangana; Bengaluru → Karnataka; Mumbai/Pune → Maharashtra; Chennai → Tamil Nadu; Gurugram → Haryana; Noida → Uttar Pradesh; Delhi → Delhi).
+- If the JD is fully Remote / WFH / "anywhere in India" / "PAN India" / says nothing about location, emit the literal token: DEFAULT
+- If the JD lists multiple Indian cities, pick the FIRST one and use it.
+
+Emit ONE LINE only. No quotes. No prose. Examples of valid output for this section:
+"Hyderabad, Telangana, India"
+"Bengaluru, Karnataka, India"
+"DEFAULT"
 
 ═══════════════════════════════════════════════════════════════════
 SECTION 1 — OBJECTIVE (raw LaTeX, exactly 1 sentence, <=260 chars).
@@ -707,8 +720,9 @@ Rules for projects:
 
 ═══════════════════════════════════════════════════════════════════
 GLOBAL RULES:
-- Output ONLY raw LaTeX across all four sections, split by [SECTION_SEPARATOR].
+- Output ONLY raw LaTeX across all five sections, split by [SECTION_SEPARATOR]. (Section 0 LOCATION is plain text — not LaTeX — but still split with the same marker.)
 - NO markdown fences. NO "## Objective / ## Skills" headers. NO explanation text.
+- NEVER USE MARKDOWN EMPHASIS. Specifically: never wrap text with **double asterisks** for bold or *single asterisks* for italic — these render literally in the PDF and instantly look AI-generated. Use \\textbf{...} for bold and \\emph{...} for italic instead. The ONLY acceptable asterisk in your output is inside an already-correct \\textbf{...} or \\emph{...} command, NEVER as a standalone markdown delimiter.
 - Every user-selected keyword MUST appear at least once across the combined Objective + Skills + Experience + Projects.
 - If a keyword does not naturally fit any real bullet, weave it into the Objective or the closest Skills line. Do NOT fabricate experience.
 - Total output must FILL ONE A4 page using 9.5pt font; stay within the bullet counts above.
@@ -944,17 +958,30 @@ function stripFences(s: string): string {
 }
 
 function splitFourSections(raw: string): {
+    location: string;
     objective: string;
     skills: string;
     experience: string;
     projects: string;
 } {
     const parts = String(raw || '').split(/\[SECTION_SEPARATOR\]/i);
-    // Back-compat: older prompts / LLMs may emit only 3 sections (no
-    // Objective). In that case we leave Objective empty; the template
-    // still compiles.
+    // The current prompt asks for FIVE sections (LOCATION, OBJECTIVE,
+    // SKILLS, EXPERIENCE, PROJECTS). Older prompts / LLMs may emit only
+    // 4 sections (no LOCATION) or 3 (no LOCATION + no OBJECTIVE). We
+    // gracefully degrade to "" for the missing leading sections so the
+    // template still compiles and the dashboard / popup never crashes.
+    if (parts.length >= 5) {
+        return {
+            location: stripFences(parts[0] || '').replace(/^["']|["']$/g, '').trim(),
+            objective: stripFences(parts[1] || ''),
+            skills: stripFences(parts[2] || ''),
+            experience: stripFences(parts[3] || ''),
+            projects: stripFences(parts[4] || ''),
+        };
+    }
     if (parts.length >= 4) {
         return {
+            location: '',
             objective: stripFences(parts[0] || ''),
             skills: stripFences(parts[1] || ''),
             experience: stripFences(parts[2] || ''),
@@ -962,11 +989,31 @@ function splitFourSections(raw: string): {
         };
     }
     return {
+        location: '',
         objective: '',
         skills: stripFences(parts[0] || ''),
         experience: stripFences(parts[1] || ''),
         projects: stripFences(parts[2] || ''),
     };
+}
+
+const DEFAULT_LOCATION = 'Gurugram, Haryana, India';
+
+// Decide the final location string injected into the resume header.
+// Accepts the LLM's raw LOCATION section. If the model said "DEFAULT"
+// (or anything that doesn't look like a real "<City>, …" string) we
+// fall back to Rishav's actual location. Sanity-cap length so a
+// runaway LLM can't blow up the header layout.
+function pickLocation(llmLocation: string): string {
+    const cleaned = String(llmLocation || '').replace(/[\r\n]+/g, ' ').trim();
+    if (!cleaned) return DEFAULT_LOCATION;
+    if (/^default$/i.test(cleaned)) return DEFAULT_LOCATION;
+    // Must look like "<word>[, …]" with at least 2 chars total, no
+    // LaTeX commands, max 60 chars (the header has limited width).
+    if (cleaned.length > 60) return DEFAULT_LOCATION;
+    if (/[\\{}]/.test(cleaned)) return DEFAULT_LOCATION;
+    if (!/[A-Za-z]/.test(cleaned)) return DEFAULT_LOCATION;
+    return cleaned;
 }
 
 function findMissingKeywords(selected: string[], combined: string): string[] {
@@ -999,33 +1046,33 @@ ${OPTIMIZE_FORMAT_SPEC}`;
 
     try {
         let raw = await callAI([{ role: 'user', content: basePrompt }]);
-        let { objective, skills, experience, projects } = splitFourSections(raw);
+        let { location, objective, skills, experience, projects } = splitFourSections(raw);
 
-        // Retry ONCE if sections are incomplete. Objective is allowed to be
-        // empty on the first pass (old LLM cache / format drift) — we'll
-        // re-prompt for it with the explicit reminder below.
+        // Retry ONCE if the four LaTeX sections are incomplete. (LOCATION
+        // is allowed to be empty — pickLocation() falls back to default.)
         //
         // IMPORTANT: We MUST NOT unconditionally overwrite on retry.
-        // If the LLM returned 3 sections (back-compat), objective is ''
-        // but skills / experience / projects are potentially good. Only
-        // overwrite each section if the retry produced a non-empty value;
-        // otherwise keep the first-pass value. Mirrors the coverage-retry
-        // pattern below.
+        // If the LLM returned only 3 LaTeX sections (back-compat),
+        // objective is '' but skills / experience / projects are
+        // potentially good. Only overwrite each section if the retry
+        // produced a non-empty value; otherwise keep the first-pass
+        // value. Mirrors the coverage-retry pattern below.
         const firstPassIncomplete =
             !objective || !skills || !experience || !projects;
         if (firstPassIncomplete) {
             console.warn(
-                `   ⚠️  Incomplete sections on first pass (obj=${!!objective}, skills=${!!skills}, exp=${!!experience}, proj=${!!projects}) — retrying once…`,
+                `   ⚠️  Incomplete sections on first pass (loc=${!!location}, obj=${!!objective}, skills=${!!skills}, exp=${!!experience}, proj=${!!projects}) — retrying once…`,
             );
             raw = await callAI([
                 {
                     role: 'user',
                     content:
                         basePrompt +
-                        '\n\nREMINDER: Output EXACTLY FOUR sections separated by [SECTION_SEPARATOR] — OBJECTIVE, SKILLS, EXPERIENCE, PROJECTS. Do NOT omit any. The OBJECTIVE is a single sentence opener that names the JD role.',
+                        '\n\nREMINDER: Output EXACTLY FIVE sections separated by [SECTION_SEPARATOR] in this order — LOCATION (one plain-text line), OBJECTIVE, SKILLS, EXPERIENCE, PROJECTS. Do NOT omit any. The OBJECTIVE is a single sentence opener that names the JD role.',
                 },
             ]);
             const retried = splitFourSections(raw);
+            location = retried.location || location;
             objective = retried.objective || objective;
             skills = retried.skills || skills;
             experience = retried.experience || experience;
@@ -1041,11 +1088,12 @@ ${OPTIMIZE_FORMAT_SPEC}`;
                 const coveragePrompt = basePrompt + `
 
 COVERAGE FAILURE — your previous answer omitted these keywords: ${missing.join(', ')}.
-Re-emit ALL FOUR sections (OBJECTIVE, SKILLS, EXPERIENCE, PROJECTS), with every one of those keywords naturally woven into the closest real bullet, the Objective sentence, or a Skills line. Do NOT fabricate experience; if a keyword has no real fit, add it to the Objective or the relevant Skills line.`;
+Re-emit ALL FIVE sections (LOCATION, OBJECTIVE, SKILLS, EXPERIENCE, PROJECTS), with every one of those keywords naturally woven into the closest real bullet, the Objective sentence, or a Skills line. Do NOT fabricate experience; if a keyword has no real fit, add it to the Objective or the relevant Skills line.`;
                 const retryRaw = await callAI([{ role: 'user', content: coveragePrompt }]);
                 const retry = splitFourSections(retryRaw);
                 if (retry.skills && retry.experience && retry.projects) {
-                    // Keep previous Objective if retry dropped it.
+                    // Keep previous LOCATION / Objective if retry dropped them.
+                    location = retry.location || location;
                     objective = retry.objective || objective;
                     skills = retry.skills;
                     experience = retry.experience;
@@ -1065,7 +1113,9 @@ Re-emit ALL FOUR sections (OBJECTIVE, SKILLS, EXPERIENCE, PROJECTS), with every 
             }
         }
 
-        res.json({ objective, skills, experience, projects });
+        const finalLocation = pickLocation(location);
+        console.log(`   📍 Location: ${finalLocation}${finalLocation === DEFAULT_LOCATION ? ' (default — JD didn\'t require a specific city)' : ` (tailored from JD; LLM said '${location}')`}`);
+        res.json({ location: finalLocation, objective, skills, experience, projects });
     } catch (e: any) {
         console.log('Optimize Error Triggered:', e.message);
         res.status(500).json({ error: 'Failed to optimize resume' });
@@ -1094,6 +1144,14 @@ function normalizeLlmLatex(s: string): string {
     out = out.replace(/\u2026/g, '\\ldots ');        // ellipsis
     out = out.replace(/\u00A0/g, ' ');               // nbsp
     out = out.replace(/[\u200B-\u200D\uFEFF]/g, ''); // zero-width / BOM
+    // Markdown emphasis → LaTeX. The LLM occasionally slips and emits
+    // `**40%**` or `*frontend*` instead of `\textbf{}` / `\emph{}`. Those
+    // asterisks render literally in the PDF and instantly read as "AI
+    // generated". Convert markdown bold/italic to the proper LaTeX
+    // commands. Use a function replacer so `$1` etc. aren't interpreted
+    // specially. Inner text is non-empty and may not span newlines.
+    out = out.replace(/\*\*([^*\n][^*\n]*?)\*\*/g, (_m, inner) => `\\textbf{${inner}}`);
+    out = out.replace(/(?<![\\*])\*([^*\n]+?)\*(?!\*)/g, (_m, inner) => `\\emph{${inner}}`);
     // Escape stray `#` and `%` ONLY when not already escaped.
     out = out.replace(/(?<!\\)#/g, '\\#');
     out = out.replace(/(?<!\\)%/g, '\\%');
@@ -1102,7 +1160,7 @@ function normalizeLlmLatex(s: string): string {
 
 // POST /api/resume/generate-pdf — Compile LaTeX to PDF via Tectonic
 app.post('/api/resume/generate-pdf', async (req, res) => {
-    const { objective, skills, experience, projects } = req.body;
+    const { objective, skills, experience, projects, location } = req.body;
 
     const templatePath = path.join(process.cwd(), 'resume_template.tex');
     let template = fs.readFileSync(templatePath, 'utf-8');
@@ -1116,6 +1174,10 @@ app.post('/api/resume/generate-pdf', async (req, res) => {
     const safeSkills = normalizeLlmLatex(skills);
     const safeExp = normalizeLlmLatex(experience);
     const safeProj = normalizeLlmLatex(projects);
+    // Location is plain text — pickLocation() already validated it server-
+    // side during /optimize, but accept it raw here for direct callers and
+    // re-validate so we never inject bare `{`/`\\` into the header.
+    const safeLocation = pickLocation(typeof location === 'string' ? location : '');
 
     // Placeholder replacement. IMPORTANT: we pass a replacer FUNCTION (not a
     // plain string) because JavaScript's String.replace() interprets `$&`,
@@ -1123,6 +1185,7 @@ app.post('/api/resume/generate-pdf', async (req, res) => {
     // which can silently corrupt AI-generated LaTeX containing math-mode
     // notation like `$f'(x)$`. A function replacer bypasses that.
     const fullLatex = template
+        .replace('{{LOCATION}}', () => safeLocation)
         .replace('{{OBJECTIVE}}', () => safeObjective)
         .replace('{{SKILLS}}', () => safeSkills)
         .replace('{{EXPERIENCE}}', () => safeExp)
