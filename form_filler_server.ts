@@ -797,7 +797,7 @@ const RESUME_FIELD_DIRECTORY = {
     },
     education: {
         degree: 'B.Tech CSE (AI & ML)',
-        university: 'Polaris School of Tech (Starex University)',
+        university: 'Polaris School of Technology (Starex University)',
         cgpa: '8.85',
         graduation_year: '2027',
         start_year: '2023',
