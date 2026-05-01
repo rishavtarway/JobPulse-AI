@@ -312,14 +312,17 @@ async function boostResume() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ jdText: currentJdText, selectedKeywords: selectedKws })
         });
-        const { objective, skills, experience, projects } = await optResp.json();
+        const { objective, skills, experience, projects, location } = await optResp.json();
 
-        // 2. Generate PDF via Tectonic
+        // 2. Generate PDF via Tectonic. Forward `location` so the header
+        //    swaps Rishav's city to whatever the JD requires (e.g.
+        //    "Hyderabad, Telangana, India" for an on-site Hyderabad role).
+        //    Server falls back to the default city if location is empty.
         status.textContent = "📄 Compiling LaTeX to PDF...";
         const pdfResp = await fetch(`${FORM_SERVER}/api/resume/generate-pdf`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ objective, skills, experience, projects })
+            body: JSON.stringify({ objective, skills, experience, projects, location })
         });
 
         if (!pdfResp.ok) throw new Error("Compilation Error");
