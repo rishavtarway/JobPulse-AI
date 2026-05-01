@@ -672,9 +672,9 @@ For EACH role, output EXACTLY this block (replace placeholder text only):
 {\\fontsize{8.4}{10.4}\\selectfont\\textbf{<ROLE TITLE>}\\hfill\\textit{<DATE RANGE>}}\\\\
 {\\fontsize{8.4}{10.4}\\selectfont\\textbf{\\color{accentblue}<COMPANY>}\\hfill <LOCATION>}
 \\begin{itemize}\\fontsize{8.4}{10.4}\\selectfont
-  \\item <Bullet 1 tailored to JD, <=125 chars, ONE LINE>
-  \\item <Bullet 2 tailored to JD, <=125 chars, ONE LINE>
-  \\item <Bullet 3 tailored to JD, <=125 chars, ONE LINE>
+  \\item <Bullet 1 tailored to JD, <=90 chars, ONE LINE>
+  \\item <Bullet 2 tailored to JD, <=90 chars, ONE LINE>
+  \\item <Bullet 3 tailored to JD, <=90 chars, ONE LINE>
 \\end{itemize}
 \\vspace{1pt}
 
@@ -685,8 +685,10 @@ BULLET-WRITING TEMPLATES — every bullet MUST follow one of these three shapes:
 
 Rules for bullets:
 - Exactly 3 bullets per role (no more, no less). The page is dense; 5 roles x 3 bullets fits one page.
-- Each bullet MUST stay on a single line. Hard cap <=125 characters; aim for ~110.
-  If the bullet is borderline, DROP adjectives / fillers ('successfully', 'effectively', 'in order to', 'various') instead of letting it wrap to two lines.
+- Each bullet MUST stay on a single line in the narrow right column. Hard cap <=90 characters; aim for ~80.
+  Anything over 90 chars wraps to a second line and breaks the 1-page layout.
+  If the bullet is borderline, DROP adjectives / fillers ('successfully', 'effectively', 'in order to', 'various', 'with a focus on ...', 'ensuring ...') and trailing keyword-padding clauses instead of letting it wrap.
+- Do NOT pad bullets with trailing 'with a focus on <keyword>' or 'ensuring <keyword>' clauses just to hit JD keywords — weave keywords into the main clause or move them to Skills.
 - Rotate templates A/B/C across the 3 bullets of a role so they don't all look the same.
 - Rewrite to reflect JD priorities, but STAY TRUTHFUL to Rishav's actual work (no fabricated companies, dates, or projects).
 - Always include a concrete metric (\\textbf{40\\%}, \\textbf{10k+ users}, PR \\#1234, \\textbf{60fps}, etc.) — use bold for the metric.
@@ -702,8 +704,8 @@ For EACH project output EXACTLY:
 {\\fontsize{8.4}{10.4}\\selectfont\\textbf{<PROJECT NAME>}\\hfill\\href{<LIVE OR GITHUB URL>}{Live | GitHub}}\\\\
 {\\fontsize{7.8}{9.6}\\selectfont\\textit{<TECH STACK, \\textbullet\\ separated>}}
 \\begin{itemize}\\fontsize{8.4}{10.4}\\selectfont
-  \\item <Bullet 1 tailored to JD, <=125 chars, ONE LINE>
-  \\item <Bullet 2 tailored to JD, <=125 chars, ONE LINE>
+  \\item <Bullet 1 tailored to JD, <=90 chars, ONE LINE>
+  \\item <Bullet 2 tailored to JD, <=90 chars, ONE LINE>
 \\end{itemize}
 \\vspace{1pt}
 
@@ -713,7 +715,7 @@ Example: "Built a 60fps crypto portfolio tracker that supports live prices, mult
 
 Rules for projects:
 - Exactly 2 bullets per project (tight — the page is already dense).
-- Each bullet MUST stay on a single line. Hard cap <=125 characters; aim for ~110. Drop adjectives before letting it wrap.
+- Each bullet MUST stay on a single line in the narrow right column. Hard cap <=90 characters; aim for ~80. Drop adjectives and trailing 'with a focus on ...' clauses before letting it wrap.
 - Links (URLs) are fixed, do not change them.
 - Bullet 1 MUST follow the PROJECT-BULLET TEMPLATE (build-verb + tech stack + quantified success).
 - Bullet 2 may be metric-first (Template A) or leadership (Template B) style.
@@ -1161,6 +1163,69 @@ function normalizeLlmLatex(s: string): string {
     return out.trim();
 }
 
+// Server-side safety net: even with the prompt's <=90-char cap, the LLM
+// occasionally emits longer bullets that wrap in the narrow right
+// column and shove the entire side-by-side minipage block onto page 2,
+// leaving page 1 empty below the header. We trim any \item line that
+// exceeds VISIBLE_CAP visible characters by surgically dropping
+// trailing filler clauses ("with a focus on ...", "ensuring ...",
+// "and ..."). LaTeX commands like \textbf{...} count as ~1 visible
+// glyph, so we measure visible length, not raw length.
+function visibleLen(s: string): number {
+    // Strip the most common LaTeX wrappers that don't render glyphs.
+    let v = s
+        .replace(/\\textbf\{([^}]*)\}/g, '$1')
+        .replace(/\\emph\{([^}]*)\}/g, '$1')
+        .replace(/\\textit\{([^}]*)\}/g, '$1')
+        .replace(/\\textbullet\\?\s*/g, '\u2022')
+        .replace(/\\#/g, '#')
+        .replace(/\\%/g, '%')
+        .replace(/\\&/g, '&')
+        .replace(/\\\$/g, '$');
+    return v.length;
+}
+
+function shortenBullet(line: string, cap: number): string {
+    // Preserve trailing punctuation and the leading "\item " marker.
+    const m = line.match(/^(\s*\\item\s+)(.*?)(\s*)$/);
+    if (!m) return line;
+    const prefix = m[1];
+    let body = m[2];
+    if (visibleLen(prefix + body) <= cap) return line;
+    // Remove the trailing period, drop padding clauses, restore the period.
+    const hadPeriod = /[.!?]$/.test(body);
+    if (hadPeriod) body = body.replace(/[.!?]+$/, '');
+    // Drop one trailing keyword-padding clause at a time and re-check.
+    const padPatterns: RegExp[] = [
+        /,?\s*with\s+a\s+focus\s+on\s+[^.,;]+$/i,
+        /,?\s*ensuring\s+[^.,;]+$/i,
+        /,?\s*to\s+ensure\s+[^.,;]+$/i,
+        /,?\s*for\s+[A-Z][^.,;]{8,}$/, // trailing "for <ProperNoun phrase>"
+        /,\s*and\s+[A-Z][^.,;]{4,}$/,  // trailing ", and Capitalized..."
+    ];
+    let guard = 6;
+    while (visibleLen(prefix + body) > cap && guard-- > 0) {
+        let trimmed = false;
+        for (const re of padPatterns) {
+            if (re.test(body)) {
+                body = body.replace(re, '').replace(/[\s,]+$/, '');
+                trimmed = true;
+                break;
+            }
+        }
+        if (!trimmed) break;
+    }
+    if (hadPeriod) body += '.';
+    return prefix + body;
+}
+
+function enforceBulletLength(latex: string, cap: number = 92): string {
+    return latex
+        .split('\n')
+        .map((ln) => /^\s*\\item\b/.test(ln) ? shortenBullet(ln, cap) : ln)
+        .join('\n');
+}
+
 // POST /api/resume/generate-pdf — Compile LaTeX to PDF via Tectonic
 app.post('/api/resume/generate-pdf', async (req, res) => {
     const { objective, skills, experience, projects, location } = req.body;
@@ -1175,8 +1240,8 @@ app.post('/api/resume/generate-pdf', async (req, res) => {
         'Software Engineer with 1.5 years of internship experience in Full Stack (React, Node.js, TypeScript) and AI/ML, seeking full-time engineering roles.';
     const safeObjective = normalizeLlmLatex(objective || fallbackObjective);
     const safeSkills = normalizeLlmLatex(skills);
-    const safeExp = normalizeLlmLatex(experience);
-    const safeProj = normalizeLlmLatex(projects);
+    const safeExp = enforceBulletLength(normalizeLlmLatex(experience));
+    const safeProj = enforceBulletLength(normalizeLlmLatex(projects));
     // Location is plain text — pickLocation() already validated it server-
     // side during /optimize, but accept it raw here for direct callers and
     // re-validate so we never inject bare `{`/`\\` into the header.
