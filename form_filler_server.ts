@@ -151,9 +151,33 @@ async function tryOpenAIChatProvider(
                 disableProvider(provider.name, 60 * 60 * 1000, '401 auth');
                 return null;
             }
-            if (response.status === 429 || response.status === 402 || response.status === 503) {
-                // Short disable; don't block the rest of the request on this provider.
-                disableProvider(provider.name, 60 * 1000, `HTTP ${response.status}`);
+            if (response.status === 429) {
+                // Per-minute rate limit (Groq free tier = 30 req/min). The
+                // Retry-After header tells us exactly when the bucket
+                // refills — usually only a few seconds. Disabling for a
+                // flat 60s pushes the very next call onto the slow NVIDIA
+                // path even when Groq would be ready in 4–5s. Honour the
+                // header, clamp to [3, 30] seconds, fallback 8s.
+                const retryAfterHeader = response.headers.get('retry-after') || '';
+                let retrySec = parseFloat(retryAfterHeader);
+                if (!Number.isFinite(retrySec) || retrySec <= 0) {
+                    // Some providers embed it in the JSON instead.
+                    const embedded = (data?.error?.message || '').match(/(\d+(?:\.\d+)?)\s*s(?:ec(?:ond)?s?)?\b/i);
+                    retrySec = embedded ? parseFloat(embedded[1]) : 8;
+                }
+                retrySec = Math.max(3, Math.min(30, retrySec));
+                disableProvider(provider.name, Math.ceil(retrySec * 1000), `HTTP 429 rate-limit (${retrySec}s)`);
+                return null;
+            }
+            if (response.status === 402) {
+                // Payment required / quota burned — retrying in seconds
+                // won't help. Park provider for the rest of the session.
+                disableProvider(provider.name, 6 * 60 * 60 * 1000, 'HTTP 402 quota');
+                return null;
+            }
+            if (response.status === 503) {
+                // Service blip — short cool-off so we don't hammer it.
+                disableProvider(provider.name, 30 * 1000, 'HTTP 503');
                 return null;
             }
             if (!response.ok) {
