@@ -565,6 +565,49 @@ interface ExtractedJob {
   id?: string;
 }
 
+// Find the best in-post apply URL by scanning text for known application
+// platforms. Preference order roughly mirrors the LLM prompt: Google Form
+// > Typeform/Tally/Notion > Lever/Greenhouse/Workday/Ashby > LinkedIn /
+// Indeed / Wellfound job URL > company careers page > anything else.
+// Excludes the nas.com feed URL so we never show an APPLY-ON-PORTAL button
+// that just bounces back to NAS.
+function extractApplyUrl(text: string): string {
+  if (!text) return '';
+  const urls = Array.from(
+    text.matchAll(/https?:\/\/[^\s<>"'()]+/gi),
+  ).map((m) => m[0].replace(/[),.\]}>;:!?]+$/g, ''));
+  if (!urls.length) return '';
+  const blacklisted = (u: string) => /(^|\.)nas\.(com|io)(\/|$)/i.test(u);
+  const candidates = urls.filter((u) => !blacklisted(u));
+  if (!candidates.length) return '';
+
+  const tests: Array<[RegExp, number]> = [
+    [/docs\.google\.com\/forms/i, 100],
+    [/forms\.gle/i, 100],
+    [/docs\.google\.com\/document/i, 90],
+    [/typeform\.com/i, 85],
+    [/tally\.so/i, 85],
+    [/notion\.(so|site)/i, 80],
+    [/(lever\.co|greenhouse\.io|ashbyhq\.com|myworkdayjobs\.com|smartrecruiters\.com|zohorecruit\.com|jazzhr\.com|bamboohr\.com|breezy\.hr|recruitee\.com|jobvite\.com|workable\.com)/i, 75],
+    [/(linkedin\.com\/jobs|linkedin\.com\/in\/)/i, 70],
+    [/indeed\.com/i, 65],
+    [/(wellfound\.com|angel\.co)/i, 65],
+    [/instahyre\.com/i, 65],
+    [/naukri\.com/i, 60],
+    [/(careers|jobs|hiring)\./i, 55],
+    [/\/(careers|jobs|hiring)(\/|$)/i, 55],
+    [/\.(com|io|ai|co|in|org|net)(\/|$)/i, 20],
+  ];
+  let best = '';
+  let bestScore = -1;
+  for (const u of candidates) {
+    let score = 10;
+    for (const [re, s] of tests) if (re.test(u)) { score = Math.max(score, s); }
+    if (score > bestScore) { bestScore = score; best = u; }
+  }
+  return best;
+}
+
 async function extractJobsFromPost(headline: string, postText: string): Promise<ExtractedJob[]> {
   const prompt = `You are extracting job postings from ONE community post on a hiring forum.
 A post may contain MULTIPLE distinct jobs/internships, possibly from different companies.
@@ -671,7 +714,7 @@ For EACH job you find across ALL posts, return one JSON object with:
 - "company": company name (best guess from the text; "Hiring Team" if truly unknown).
 - "role": role/title (e.g. "SDE Intern", "Backend Engineer"). Empty string if unclear.
 - "email": HR/application email if explicitly present, else null. If multiple, comma-join.
-- "link": application URL (Google Form, careers page, etc.) if explicitly present, else null.
+- "link": the BEST application URL for THIS job — look hard for it anywhere in the post body. It can be a Google Form (docs.google.com/forms), Google Doc (docs.google.com/document), company careers page, LinkedIn / Indeed / Wellfound / Instahyre job URL, Notion / Typeform / Tally / Lever / Greenhouse / Workday / Ashby / Zoho Recruit / SmartRecruiters / JazzHR / BambooHR URL, or a plain company website URL they tell you to apply at. Extract the FIRST plausible application URL in the post body (never the NAS post URL itself). Only set null if the post has NO URL AT ALL (e.g. phone-only / DM-only posts). If multiple URLs are present, prefer in this order: Google Form > Typeform/Tally/Notion > Lever/Greenhouse/Workday/Ashby > LinkedIn/Indeed/Wellfound job URL > company careers page > plain company URL.
 - "subject": IGNORE — the host code will overwrite this with a deterministic catchy subject. You can return "" or a placeholder.
 - "bodyHtml": EXACTLY 2 paragraphs of HTML using <p> only (no <b>, no lists). Paragraph 1: a SHORT greeting line "<p>Hi <Company> Hiring Team,</p>" followed by a 1-2 sentence paragraph that ties Rishav's stack to THIS role. Paragraph 2: a 1-2 sentence credibility line citing internships + a relevant project, ending with "I have attached my resume and other relevant documents for your review." The host code will append a fixed paragraph 3 + signature — DO NOT include any para about open-source PRs, projects, "Best,", or signatures yourself.
 - "description": the FULL original text of THIS job from the post (verbatim, including emojis and line breaks). Prefix with "${'<inPostId>'}. <role>\\n" so each entry is self-identifying.
@@ -2006,6 +2049,16 @@ async function main() {
           }
         }
 
+        // Regex fallback: if the LLM returned null link but the original
+        // post body clearly contains one (Google Form / Docs / careers /
+        // Lever / Greenhouse / etc.), scan it ourselves and use that as
+        // the "Apply on Portal" URL. Prefer real apply URLs over the NAS
+        // feed URL so the dashboard button doesn't redirect back to NAS.
+        let applyLink: string = typeof j.link === 'string' ? j.link.trim() : '';
+        if (!applyLink) {
+          applyLink = extractApplyUrl(j.description || '') || extractApplyUrl(p.postText) || '';
+        }
+
         if (j.email && gmail && j.bodyHtml) {
           console.log(`   📧 Drafting email for ${j.company} → ${j.email}`);
           try {
@@ -2017,19 +2070,21 @@ async function main() {
           await pushToDashboard({
             ...baseRecord,
             email: j.email,
-            link: j.link || p.postUrl,
+            link: applyLink,          // empty if no real apply URL
+            postUrl: p.postUrl,       // always the NAS feed anchor
             status: 'applied',
             type: 'web',
             description: `<b>SUBJECT: ${j.subject}</b><br><br>${j.bodyHtml}`,
           });
-        } else if (j.link || j.email) {
+        } else if (applyLink || j.email) {
           console.log(
-            `   📎 Saving manual-apply for ${j.company} → ${j.link || j.email || p.postUrl}`,
+            `   📎 Saving manual-apply for ${j.company} → ${applyLink || j.email}`,
           );
           await pushToDashboard({
             ...baseRecord,
             email: j.email || '',
-            link: j.link || p.postUrl,
+            link: applyLink,
+            postUrl: p.postUrl,
             status: 'to_apply',
             type: 'web',
             description: j.description || '',
@@ -2041,7 +2096,8 @@ async function main() {
           await pushToDashboard({
             ...baseRecord,
             email: '',
-            link: p.postUrl,
+            link: '',
+            postUrl: p.postUrl,
             status: 'to_apply',
             type: 'web',
             description: j.description || '',

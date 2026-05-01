@@ -444,6 +444,13 @@ app.get('/api/form-filler/cache', (req, res) => {
     res.json(data);
 });
 
+// GET /api/resume/extract-fields — structured directory of every resume
+// field the extension popup can offer as click-to-copy chips so the user
+// can manually fill fields the auto-filler couldn't figure out.
+app.get('/api/resume/extract-fields', (_req, res) => {
+    res.json(RESUME_FIELD_DIRECTORY);
+});
+
 // GET /api/form-filler/status — check if online
 app.get('/api/form-filler/status', (req, res) => {
     const data = loadResumeData();
@@ -762,6 +769,175 @@ PROJECTS:
    - 60% query boost via HashMap caching + SQL indexing
    - Dockerized CI/CD zero-downtime deployments
 `;
+
+// Structured directory of every resume field the extension's auto-filler
+// may need. Exposed via GET /api/resume/extract-fields so the popup can
+// render each as a one-click copy chip when the AI can't / doesn't know
+// how to fill the field itself. Keep this hand-maintained and aligned
+// with FIXED_RESUME_FACTS above.
+const RESUME_FIELD_DIRECTORY = {
+    identity: {
+        full_name: 'Rishav Tarway',
+        first_name: 'Rishav',
+        last_name: 'Tarway',
+        email: 'rishavtarway@gmail.com',
+        phone: '+91-7004544142',
+        phone_digits: '7004544142',
+        country_code: '+91',
+        address_city: 'Gurugram',
+        address_state: 'Haryana',
+        address_country: 'India',
+        date_of_birth: '2004-05-11',
+        gender: 'Male',
+        nationality: 'Indian',
+        linkedin: 'https://www.linkedin.com/in/rishav-tarway-fst/',
+        github: 'https://github.com/rishavtarway',
+        portfolio: 'https://my-portfolio-five-roan-36.vercel.app/',
+        codeforces: 'https://codeforces.com/profile/NeonMagic',
+    },
+    education: {
+        degree: 'B.Tech CSE (AI & ML)',
+        university: 'Polaris School of Tech (Starex University)',
+        cgpa: '8.85',
+        graduation_year: '2027',
+        start_year: '2023',
+        high_school: 'DAV Cantt (Class XII 75%, 2022, Gaya)',
+        secondary_school: 'DAV CRRC (Class X 80%, 2020, Gaya)',
+    },
+    skills_flat: [
+        'Java', 'C++', 'JavaScript', 'TypeScript', 'Python', 'Go',
+        'React', 'Next.js', 'Node.js', 'Express', 'Redux', 'REST APIs', 'Socket.io',
+        'React Native', 'Expo SDK 51',
+        'SQL', 'MongoDB', 'Redis', 'Supabase', 'AWS (S3, CloudFront)',
+        'Git', 'Docker', 'Selenium', 'CI/CD', 'Cucumber BDD', 'OSS-Fuzz', 'ASAN',
+        'Gemini API', 'GPT', 'CoinGecko API', 'Zustand',
+        'OOP', 'DSA', 'System Design', 'ML', 'Fuzz Testing',
+    ],
+    skills_grouped: {
+        languages: 'Java, C++, JavaScript, TypeScript, Python, Go',
+        web: 'React, Next.js, Node.js, Express, Redux, REST APIs, Socket.io',
+        mobile: 'React Native, Expo SDK 51',
+        db_cloud: 'SQL, MongoDB, Redis, Supabase, AWS (S3, CloudFront)',
+        tools: 'Git, Docker, Selenium, CI/CD, Cucumber BDD, OSS-Fuzz, ASAN',
+        ai_apis: 'Gemini API, GPT, CoinGecko API, Zustand',
+        core: 'OOP, DSA, System Design, ML, Fuzz Testing',
+    },
+    experience: [
+        {
+            role: 'Research Software Engineer Intern',
+            company: 'IIIT Bangalore — MOSIP',
+            dates: 'Jul 2025 – Oct 2025',
+            location: 'Remote',
+            bullets: [
+                'Selenium + Java + Cucumber BDD test suites for national-government biometric identity systems',
+                'PR #1370: automated multilingual UI navigation & eSignet IDP verification',
+                'PR #543: fixed auto-logout bug during background sync',
+            ],
+        },
+        {
+            role: 'Software Engineer Intern',
+            company: 'Classplus',
+            dates: 'Nov 2024 – Jan 2025',
+            location: 'Noida',
+            bullets: [
+                'Improved observability 40% via unique request-ID tracing across Express.js middleware',
+                'Reduced API latency 25% for 10k+ concurrent users',
+                'Async-local-storage error tracking improved production incident MTTR',
+            ],
+        },
+        {
+            role: 'Full Stack Developer Intern',
+            company: 'TechVastra',
+            dates: 'Sep 2024 – Nov 2024',
+            location: 'Remote',
+            bullets: [
+                'Next.js + TypeScript web app with Android platform integration',
+                'Boosted front-end perf 30% via React Hooks refactoring / memoisation',
+                'Designed RESTful APIs handling 10k+ concurrent user data-sync operations',
+            ],
+        },
+        {
+            role: 'QA Automation Intern',
+            company: 'Testbook',
+            dates: 'Sep 2024 – Nov 2024',
+            location: 'Noida',
+            bullets: [
+                'Selenium + ChromeDriver framework, 50% faster test execution',
+                'Uncovered 30+ critical bugs; automated regression pipeline',
+                'Cut regression testing time, faster sprint delivery cycles',
+            ],
+        },
+        {
+            role: 'Frontend Developer Intern',
+            company: 'Franchizerz',
+            dates: 'Jul 2024 – Dec 2024',
+            location: 'Remote',
+            bullets: [
+                'Built Franchizerz.com UI with React + Next.js + REST APIs, modular OOP',
+                'Lighthouse 68 → 92 via route-level code-splitting + lazy loading',
+                'HTML5/CSS3 best practices, reusable component library',
+            ],
+        },
+    ],
+    projects: [
+        {
+            name: 'Tech Stream Community',
+            url: 'https://techi-spott.vercel.app/',
+            tech: 'React, Socket.io, MongoDB, AWS S3/CloudFront, Redis, Chart.js',
+            bullets: [
+                'Real-time chat: 500+ users, 99.9% uptime, live admin dashboard',
+                'WebSocket scaling + rate-limiting, 500+ concurrent conns, <100ms latency',
+                'Chart.js + Redis pub/sub analytics pipeline',
+            ],
+        },
+        {
+            name: 'CoinWatch',
+            url: 'https://coinwatch-app-seven.vercel.app/',
+            tech: 'React Native, Expo SDK 51, TypeScript, Zustand, Supabase, CoinGecko API',
+            bullets: [
+                'Live prices, 7-day sparklines, portfolio P&L, price alerts, multi-currency',
+                'FlashList at 60fps; global market cap, BTC dominance, volume stats',
+                'Supabase Postgres + Google OAuth cross-device cloud sync',
+            ],
+        },
+        {
+            name: 'ProResume',
+            url: 'https://proresume-eight.vercel.app/',
+            tech: 'React Native, Expo SDK 51, TypeScript, Supabase, Gemini API, Zustand',
+            bullets: [
+                'ATS-optimised builder: Gemini scoring, JD tailoring, cover-letter generation',
+                'Kanban tracker (Saved / Applied / Interview / Rejected / Ghosted) + PDF export',
+                'Master profile architecture, Supabase + Google OAuth cross-device sync',
+            ],
+        },
+        {
+            name: 'Scholar Track App',
+            url: 'https://github.com/rishavtarway/Student-Database-System/',
+            tech: 'Java, SQL, Docker, CI/CD',
+            bullets: [
+                '60% query boost via HashMap caching + SQL indexing',
+                'Dockerized CI/CD zero-downtime deployments',
+            ],
+        },
+    ],
+    achievements: [
+        'WoC 5.0 — OpenPrinting (go-avahi): selected contributor; built full fuzz-testing infra, 11 fuzz harnesses, CWE-401 16MB memory-leak fix, CWE-122 heap buffer overflow fix',
+        '3 merged PRs in Stdlib.js (type safety & performance for 1M+ monthly users)',
+        '2 merged PRs in OpenPrinting (CUPS driver bugs for enterprise Linux printing)',
+        '1st Runner-Up — Hack With Uttarakhand (Team Code Heist), 36-hour AI resume generator',
+    ],
+    common_questions: {
+        why_this_role:
+            "I've spent the last 18 months building production-grade systems across 5 internships — shipping request-ID tracing at Classplus (observability +40%), automated BDD test suites at MOSIP (PR #1370 on multilingual IDP verification), and a 500-user real-time chat platform (Tech Stream Community). I want to apply that same ship-first mindset to the problems your team is solving.",
+        why_us:
+            'Your team ships real products at scale and cares about code quality + AI judgement — which matches how I work: I use AI tooling heavily but treat correctness, observability, and production-readiness as non-negotiables. The open-source PRs I land (OpenPrinting fuzz infra, OSS-Fuzz integration, Stdlib.js type safety) reflect that.',
+        notice_period: 'Immediate — I am available to join full-time right away.',
+        expected_salary: 'Open to market-competitive offers for the role and location.',
+        willing_to_relocate: 'Yes — open to remote or on-site in any major Indian tech hub (Gurugram / Bengaluru / Hyderabad / Pune / NCR).',
+        visa_status: 'Indian citizen, based in Gurugram. No visa needed for roles in India.',
+        years_experience: '1.5 years of hands-on internship experience across full-stack, backend, QA automation, and open-source contributions.',
+    },
+} as const;
 
 function stripFences(s: string): string {
     return String(s || '').replace(/```latex/ig, '').replace(/```/g, '').trim();

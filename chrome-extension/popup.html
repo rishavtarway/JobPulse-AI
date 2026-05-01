@@ -287,6 +287,22 @@
             </div>
             <button id="open-selected-btn" class="btn-pill btn-dark" style="display:none">🔥 Launch Session</button>
         </div>
+
+        <div class="section" id="copy-fields-section">
+            <div class="section-title">
+                Quick Copy Fields
+                <button id="refresh-fields-btn"
+                    style="background:none; border:none; cursor:pointer; color:var(--accent); font-weight:800; font-size:10px;">REFRESH</button>
+            </div>
+            <div style="font-size:10px; color:var(--text-secondary, #A0AEC0); margin-bottom:6px;">
+                Click any chip to copy. Use for fields the auto-filler can't handle.
+            </div>
+            <input id="copy-fields-search" placeholder="Search fields…"
+                style="width:100%; padding:6px 8px; margin-bottom:8px; font-size:11px; border:1px solid #E2E8F0; border-radius:6px; box-sizing:border-box;" />
+            <div id="copy-fields-list" style="max-height:260px; overflow-y:auto;">
+                <div style="text-align:center; padding:14px; font-size:11px; color:#A0AEC0;">Loading resume fields…</div>
+            </div>
+        </div>
     </div>
 
     <!-- RESUME BUILDER MODE -->

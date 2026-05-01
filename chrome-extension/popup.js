@@ -65,6 +65,11 @@ document.addEventListener('DOMContentLoaded', () => {
     checkServer();
     loadTasks();
     restoreResumeState();
+
+    // Copy Fields panel
+    document.getElementById('refresh-fields-btn').addEventListener('click', loadCopyFields);
+    document.getElementById('copy-fields-search').addEventListener('input', filterCopyFields);
+    loadCopyFields();
 });
 
 function switchTab(tab) {
@@ -376,4 +381,173 @@ function showStatus(msg, type) {
         el.textContent = '';
         el.className = 'status-msg';
     }, 3000);
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Quick Copy Fields — fetch the structured resume directory from the
+// form_filler server and render every field as a click-to-copy chip.
+// ─────────────────────────────────────────────────────────────────
+let _copyFieldsCache = [];
+
+async function loadCopyFields() {
+    const list = document.getElementById('copy-fields-list');
+    if (!list) return;
+    list.innerHTML = '<div style="text-align:center; padding:14px; font-size:11px; color:#A0AEC0;">Loading…</div>';
+    try {
+        const res = await fetch(`${FORM_SERVER}/api/resume/extract-fields`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        _copyFieldsCache = flattenFieldDirectory(data);
+        renderCopyFields(_copyFieldsCache);
+    } catch (e) {
+        list.innerHTML = `<div style="text-align:center; padding:14px; font-size:11px; color:#822727;">Failed to load (${String(e.message || e)}).<br/>Is form_filler_server.ts running?</div>`;
+    }
+}
+
+// Turn the nested object returned by /api/resume/extract-fields into a
+// flat array of { group, label, value } chips. Arrays become one chip
+// per item (e.g. each experience bullet, each skill), with a human
+// label so the user knows which slot it belongs to.
+function flattenFieldDirectory(data) {
+    const chips = [];
+    if (!data || typeof data !== 'object') return chips;
+
+    // Identity / Education — plain key-value objects
+    for (const groupKey of ['identity', 'education', 'skills_grouped', 'common_questions']) {
+        const group = data[groupKey];
+        if (!group || typeof group !== 'object') continue;
+        const groupLabel = humanizeGroup(groupKey);
+        for (const [k, v] of Object.entries(group)) {
+            if (typeof v !== 'string' || !v.trim()) continue;
+            chips.push({ group: groupLabel, label: humanizeKey(k), value: v });
+        }
+    }
+
+    // Skills flat list — each skill is its own chip
+    if (Array.isArray(data.skills_flat)) {
+        data.skills_flat.forEach((s) => {
+            if (typeof s === 'string' && s.trim()) {
+                chips.push({ group: 'Skills', label: s, value: s });
+            }
+        });
+    }
+
+    // Experience — for each role, one chip with the role/company line
+    // and one chip per bullet.
+    if (Array.isArray(data.experience)) {
+        data.experience.forEach((exp) => {
+            const header = `${exp.role || ''} — ${exp.company || ''} (${exp.dates || ''})`.trim();
+            if (exp.role || exp.company) {
+                chips.push({ group: 'Experience', label: `${exp.company || 'Role'} · header`, value: header });
+            }
+            if (exp.dates) chips.push({ group: 'Experience', label: `${exp.company || 'Role'} · dates`, value: exp.dates });
+            if (exp.location) chips.push({ group: 'Experience', label: `${exp.company || 'Role'} · location`, value: exp.location });
+            (exp.bullets || []).forEach((b, i) => {
+                chips.push({ group: 'Experience', label: `${exp.company || 'Role'} · bullet ${i + 1}`, value: b });
+            });
+        });
+    }
+
+    // Projects — one chip for header, one per bullet, one for URL
+    if (Array.isArray(data.projects)) {
+        data.projects.forEach((p) => {
+            const header = `${p.name || ''} — ${p.tech || ''}`.trim();
+            if (p.name) chips.push({ group: 'Projects', label: `${p.name} · header`, value: header });
+            if (p.tech) chips.push({ group: 'Projects', label: `${p.name} · stack`, value: p.tech });
+            if (p.url) chips.push({ group: 'Projects', label: `${p.name} · URL`, value: p.url });
+            (p.bullets || []).forEach((b, i) => {
+                chips.push({ group: 'Projects', label: `${p.name} · bullet ${i + 1}`, value: b });
+            });
+        });
+    }
+
+    // Achievements — one chip each
+    if (Array.isArray(data.achievements)) {
+        data.achievements.forEach((a, i) => {
+            if (typeof a === 'string' && a.trim()) {
+                chips.push({ group: 'Achievements', label: `#${i + 1}`, value: a });
+            }
+        });
+    }
+
+    return chips;
+}
+
+function humanizeGroup(k) {
+    return ({
+        identity: 'Identity',
+        education: 'Education',
+        skills_grouped: 'Skills (grouped)',
+        common_questions: 'Common Questions',
+    })[k] || k;
+}
+function humanizeKey(k) {
+    return String(k || '').replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function renderCopyFields(chips) {
+    const list = document.getElementById('copy-fields-list');
+    if (!list) return;
+    if (!chips.length) {
+        list.innerHTML = '<div style="text-align:center; padding:14px; font-size:11px; color:#A0AEC0;">No fields match.</div>';
+        return;
+    }
+    // Group chips by .group for readability
+    const byGroup = {};
+    chips.forEach((c) => {
+        if (!byGroup[c.group]) byGroup[c.group] = [];
+        byGroup[c.group].push(c);
+    });
+    const html = Object.entries(byGroup).map(([groupName, groupChips]) => {
+        const inner = groupChips.map((c, idx) => {
+            const valEsc = String(c.value).replace(/"/g, '&quot;').replace(/</g, '&lt;');
+            const preview = c.value.length > 60 ? c.value.slice(0, 57) + '…' : c.value;
+            const previewEsc = preview.replace(/</g, '&lt;');
+            return `
+                <div class="copy-chip" data-cfv="${groupName}::${idx}"
+                    title="Click to copy · ${valEsc}"
+                    style="cursor:pointer; padding:6px 8px; margin:0 0 4px 0; background:#F7FAFC; border:1px solid #E2E8F0; border-radius:6px; font-size:11px; line-height:1.35; transition:background 0.15s;">
+                    <div style="font-weight:700; color:#2D3748; font-size:10px; text-transform:uppercase; letter-spacing:0.03em; margin-bottom:2px;">${c.label}</div>
+                    <div style="color:#4A5568; word-break:break-word;">${previewEsc}</div>
+                </div>
+            `;
+        }).join('');
+        return `
+            <div style="margin-bottom:10px;">
+                <div style="font-size:10px; font-weight:800; color:#E63946; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px;">${groupName}</div>
+                ${inner}
+            </div>
+        `;
+    }).join('');
+    list.innerHTML = html;
+
+    // Wire up click-to-copy
+    list.querySelectorAll('.copy-chip').forEach((el) => {
+        el.addEventListener('click', async () => {
+            const key = el.getAttribute('data-cfv');
+            const [groupName, idxStr] = key.split('::');
+            const idx = parseInt(idxStr, 10);
+            const value = (byGroup[groupName] || [])[idx]?.value || '';
+            try {
+                await navigator.clipboard.writeText(value);
+                const prev = el.style.background;
+                el.style.background = '#C6F6D5';
+                showStatus(`Copied: ${value.slice(0, 40)}${value.length > 40 ? '…' : ''}`, 'success');
+                setTimeout(() => { el.style.background = prev || '#F7FAFC'; }, 600);
+            } catch (e) {
+                showStatus(`Copy failed: ${e.message}`, 'error');
+            }
+        });
+    });
+}
+
+function filterCopyFields() {
+    const q = (document.getElementById('copy-fields-search').value || '').toLowerCase().trim();
+    if (!q) { renderCopyFields(_copyFieldsCache); return; }
+    const filtered = _copyFieldsCache.filter((c) =>
+        c.label.toLowerCase().includes(q) ||
+        c.value.toLowerCase().includes(q) ||
+        c.group.toLowerCase().includes(q)
+    );
+    renderCopyFields(filtered);
 }
