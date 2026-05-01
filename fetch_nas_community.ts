@@ -1146,9 +1146,48 @@ async function collectFeedCards(page: Page): Promise<FeedCard[]> {
       }
 
       let bodyText = '';
-      const bodyEl = root.querySelector<HTMLElement>(
-        '[class*="text-para-sm"][class*="whitespace-pre-line"]',
-      );
+      // Pick the body element that belongs to THIS card, not a sibling.
+      // Previously we did root.querySelector(...), but on 2026-nas.com some
+      // cards (especially after a pinned/referenced Data Intern post) end
+      // up with a walk-up root that encloses MULTIPLE cards — so the first
+      // `text-para-sm whitespace-pre-line` descendant was the neighboring
+      // pinned card's body, and four cards in a row would all return the
+      // same "Data Intern" body (and then get dropped by the duplicate-body
+      // guard). Fix: tie body extraction to THIS card's #post-<key> anchor
+      // — walk up from that anchor until we hit an ancestor that contains
+      // a text-para-sm body, and use it. Anchor is unique per card.
+      let bodyEl: HTMLElement | null = null;
+      if (postUrl) {
+        const hashMatch = postUrl.match(/#(post-[A-Za-z0-9_-]+)/);
+        const postId = hashMatch ? hashMatch[1] : '';
+        if (postId) {
+          const anchor = root.querySelector<HTMLAnchorElement>(
+            `a[href$="#${postId}"]`,
+          );
+          if (anchor) {
+            let cur: HTMLElement | null = anchor as HTMLElement;
+            let depth = 0;
+            while (cur && cur !== root && depth < 10) {
+              const body = cur.querySelector<HTMLElement>(
+                '[class*="text-para-sm"][class*="whitespace-pre-line"]',
+              );
+              if (body && (body.innerText || '').trim().length > 40) {
+                bodyEl = body;
+                break;
+              }
+              cur = cur.parentElement;
+              depth++;
+            }
+          }
+        }
+      }
+      // Fallback: if the anchor-based walk didn't find a body, fall back to
+      // the old root-scoped query. This keeps existing layouts working.
+      if (!bodyEl) {
+        bodyEl = root.querySelector<HTMLElement>(
+          '[class*="text-para-sm"][class*="whitespace-pre-line"]',
+        );
+      }
       if (bodyEl) {
         // Strip the inline "...See more" expand-affordance — it's a sibling
         // <div> overlay rendered absolutely; innerText would otherwise
@@ -1803,12 +1842,55 @@ async function main() {
         postText.length === previousPostBody.length &&
         postText.slice(0, 200) === previousPostBody.slice(0, 200)
       ) {
+        // Inline-card extraction returned a neighbor's body. Try the
+        // navigate-then-extract path as a last resort BEFORE giving up,
+        // so we don't silently lose 4+ posts in a row just because a
+        // pinned card poisoned the inline selector.
         console.warn(
           `   ⚠️  DUPLICATE BODY — same ${postText.length}-char chunk as previous post. ` +
-            `Modal/post isolation FAILED. Skipping LLM call to avoid wasting a request.`,
+            `Retrying via post-detail navigation…`,
         );
-        await returnToFeed(page, feedUrl);
-        continue;
+        try {
+          let retriedText = '';
+          let retriedHeadline = '';
+          let retriedUrl: string | null = null;
+          if (card.postUrl) {
+            const r = await openPostByUrl(page, card.postUrl);
+            retriedUrl = r.navigatedTo;
+            retriedText = r.postText;
+            retriedHeadline = r.headline || card.headline;
+          } else {
+            const r = await clickIntoCard(page, card.index);
+            retriedUrl = r.navigatedTo;
+            retriedText = r.postText;
+            retriedHeadline = r.headline || card.headline;
+          }
+          if (
+            retriedText &&
+            retriedText.length > 40 &&
+            !(retriedText.length === previousPostBody.length &&
+              retriedText.slice(0, 200) === previousPostBody.slice(0, 200))
+          ) {
+            console.log(
+              `   ✅ Recovered via navigation (${retriedText.length} chars).`,
+            );
+            postText = retriedText;
+            detailHeadline = retriedHeadline || detailHeadline;
+            if (retriedUrl) navigatedTo = retriedUrl;
+          } else {
+            console.warn(
+              `   ⚠️  Navigation also returned duplicate/empty body. Skipping LLM call to avoid wasting a request.`,
+            );
+            await returnToFeed(page, feedUrl);
+            continue;
+          }
+        } catch (e) {
+          console.warn(
+            `   ⚠️  Navigation retry failed: ${(e as Error).message}. Skipping.`,
+          );
+          await returnToFeed(page, feedUrl);
+          continue;
+        }
       }
       previousPostBody = postText;
 
