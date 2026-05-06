@@ -370,11 +370,15 @@ function saveSeen(seen: Set<number>) {
 async function main() {
   const apiId = parseInt(process.env.TELEGRAM_API_ID || '0', 10);
   const apiHash = process.env.TELEGRAM_API_HASH || '';
-  const phone = process.env.TELEGRAM_PHONE_NUMBER || '';
-  const twoFa = process.env.TELEGRAM_2FA_PASSWORD || '';
+  // Accept either TELEGRAM_PHONE_NUMBER (the documented name) or
+  // TELEGRAM_PHONE (the shorter form a lot of users actually have in
+  // their .env files). Same for the 2FA password — some setups use
+  // TELEGRAM_PASSWORD instead of TELEGRAM_2FA_PASSWORD.
+  const phone = process.env.TELEGRAM_PHONE_NUMBER || process.env.TELEGRAM_PHONE || '';
+  const twoFa = process.env.TELEGRAM_2FA_PASSWORD || process.env.TELEGRAM_PASSWORD || '';
 
   if (!apiId || !apiHash || !phone) {
-    console.error('❌ Missing TELEGRAM_API_ID / TELEGRAM_API_HASH / TELEGRAM_PHONE_NUMBER in .env.');
+    console.error('❌ Missing TELEGRAM_API_ID / TELEGRAM_API_HASH / TELEGRAM_PHONE (or TELEGRAM_PHONE_NUMBER) in .env.');
     console.error('   Get the first two from https://my.telegram.org/apps (Create new application).');
     process.exit(1);
   }
