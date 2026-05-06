@@ -312,18 +312,41 @@ async function postToDashboard(p: DashboardPayload): Promise<boolean> {
 }
 
 // ─── readline-based prompt for first-run OTP / 2FA ────────────────────────
+// IMPORTANT: gramjs's `client.start` calls `phoneCode()` first and then
+// `password()` if Telegram says SESSION_PASSWORD_NEEDED. We MUST share
+// a single readline interface between the two prompts. If we open and
+// close a fresh interface for each call, `rl.close()` after the OTP
+// terminates Node's stdin readable, so the second `createInterface()`
+// gets an already-ended stdin → the password prompt resolves instantly
+// with an empty string and gramjs silently gives up on 2FA.
+let _rl: readline.Interface | null = null;
+function getRl(): readline.Interface {
+  if (!_rl) {
+    _rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+  }
+  return _rl;
+}
+function closeRl() {
+  if (_rl) { try { _rl.close(); } catch { /* noop */ } _rl = null; }
+}
 function ask(question: string, hide = false): Promise<string> {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+  const rl = getRl();
   return new Promise((resolve) => {
     if (hide) {
-      // Best-effort hidden input. gramjs's `input` package would be cleaner
-      // but we stick to readline to keep dependencies lean. Hidden mode
-      // suppresses echo by overriding _writeToOutput briefly.
+      // Best-effort hidden input — overrides _writeToOutput briefly to
+      // echo asterisks instead of the actual character.
       const _w = (rl as any)._writeToOutput;
-      (rl as any)._writeToOutput = function (s: string) { if (s && s.indexOf('\n') === -1) (rl as any).output.write('*'); else (rl as any).output.write(s); };
-      rl.question(question, (a) => { (rl as any)._writeToOutput = _w; rl.close(); console.log(''); resolve(a.trim()); });
+      (rl as any)._writeToOutput = function (s: string) {
+        if (s && s.indexOf('\n') === -1) (rl as any).output.write('*');
+        else (rl as any).output.write(s);
+      };
+      rl.question(question, (a) => {
+        (rl as any)._writeToOutput = _w;
+        process.stdout.write('\n');
+        resolve(a.trim());
+      });
     } else {
-      rl.question(question, (a) => { rl.close(); resolve(a.trim()); });
+      rl.question(question, (a) => resolve(a.trim()));
     }
   });
 }
@@ -335,12 +358,24 @@ async function signInTelegram(apiId: number, apiHash: string, phone: string, two
   const client = new TelegramClient(stringSession, apiId, apiHash, { connectionRetries: 5 });
   console.log(sessionStr ? '🔐 Reusing saved Telegram session…' : '🔐 First run — starting fresh sign-in (will prompt for OTP).');
 
-  await client.start({
-    phoneNumber: async () => phone,
-    password: async () => twoFa || (await ask('🔐 2FA password (hidden): ', true)),
-    phoneCode: async () => (await ask('📱 Enter the OTP Telegram just sent you: ')),
-    onError: (err: any) => console.warn(`   ⚠️  Telegram sign-in error: ${err && err.message ? err.message : err}`),
-  });
+  try {
+    await client.start({
+      phoneNumber: async () => phone,
+      // gramjs only invokes this callback if Telegram returns
+      // SESSION_PASSWORD_NEEDED (i.e. the account has 2-step
+      // verification enabled). We try the env var first to allow
+      // silent re-auth on session expiry, falling back to an
+      // interactive hidden prompt.
+      password: async () => twoFa || (await ask('🔐 2FA password (hidden): ', true)),
+      phoneCode: async () => (await ask('📱 Enter the OTP Telegram just sent you: ')),
+      onError: (err: any) => console.warn(`   ⚠️  Telegram sign-in error: ${err && err.message ? err.message : err}`),
+    });
+  } finally {
+    // Close the shared readline interface only AFTER sign-in is fully
+    // done — closing between the OTP and 2FA prompts would EOF stdin
+    // and silently skip the password step.
+    closeRl();
+  }
 
   if (!sessionStr) {
     try {
