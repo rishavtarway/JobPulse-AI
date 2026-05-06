@@ -646,9 +646,17 @@ ${safeSlice(jdText, 2000)}`;
 // is missing from the generated output.
 
 const OPTIMIZE_FORMAT_SPEC = `
-OUTPUT EXACTLY FIVE SECTIONS separated by the literal marker [SECTION_SEPARATOR].
-The order must be: LOCATION, then OBJECTIVE, then SKILLS, then EXPERIENCE, then PROJECTS.
-Do NOT include the words "LOCATION", "OBJECTIVE", "SKILLS", "EXPERIENCE" or "PROJECTS" as headers — the template already has the headings (LOCATION is just used to overwrite the header city). Output ONLY the body LaTeX for each section.
+OUTPUT EXACTLY FIVE NAMED SECTIONS, each preceded by a header marker on its own line.
+The exact markers (use ALL FIVE, ALL CAPS, on their own line, with three equals on each side):
+===LOCATION===
+===OBJECTIVE===
+===SKILLS===
+===EXPERIENCE===
+===PROJECTS===
+
+Emit the markers in this exact order. Under each marker, output ONLY the body content for that section (no extra heading words like "Objective:" or "Skills:" — the template already has those titles). The LOCATION marker's content is plain text (not LaTeX). The other four markers' content is raw LaTeX.
+
+CRITICAL: NEVER repeat or echo the location string anywhere except under ===LOCATION===. The OBJECTIVE section is a tailored sentence; it must NOT start with a city name.
 
 ═══════════════════════════════════════════════════════════════════
 SECTION 0 — LOCATION (one short line, NOT LaTeX, just plain text).
@@ -746,7 +754,7 @@ Rules for projects:
 
 ═══════════════════════════════════════════════════════════════════
 GLOBAL RULES:
-- Output ONLY raw LaTeX across all five sections, split by [SECTION_SEPARATOR]. (Section 0 LOCATION is plain text — not LaTeX — but still split with the same marker.)
+- Output ONLY raw LaTeX across the OBJECTIVE / SKILLS / EXPERIENCE / PROJECTS sections; LOCATION is plain text. Use the exact named markers ===LOCATION===, ===OBJECTIVE===, ===SKILLS===, ===EXPERIENCE===, ===PROJECTS=== to delimit them.
 - NO markdown fences. NO "## Objective / ## Skills" headers. NO explanation text.
 - NEVER USE MARKDOWN EMPHASIS. Specifically: never wrap text with **double asterisks** for bold or *single asterisks* for italic — these render literally in the PDF and instantly look AI-generated. Use \\textbf{...} for bold and \\emph{...} for italic instead. The ONLY acceptable asterisk in your output is inside an already-correct \\textbf{...} or \\emph{...} command, NEVER as a standalone markdown delimiter.
 - Every user-selected keyword MUST appear at least once across the combined Objective + Skills + Experience + Projects.
@@ -983,6 +991,13 @@ function stripFences(s: string): string {
     return String(s || '').replace(/```latex/ig, '').replace(/```/g, '').trim();
 }
 
+// Parse the LLM's optimize response into the FIVE named sections. We
+// rely on explicit named markers (===LOCATION===, ===OBJECTIVE===,
+// ===SKILLS===, ===EXPERIENCE===, ===PROJECTS===) so the parser is
+// order-independent and survives the LLM duplicating, dropping, or
+// echoing a section. Legacy index-based parsing (single
+// [SECTION_SEPARATOR] marker, positional) is kept as a fallback for
+// older runs / mid-rollout LLM responses.
 function splitFourSections(raw: string): {
     location: string;
     objective: string;
@@ -990,12 +1005,60 @@ function splitFourSections(raw: string): {
     experience: string;
     projects: string;
 } {
-    const parts = String(raw || '').split(/\[SECTION_SEPARATOR\]/i);
-    // The current prompt asks for FIVE sections (LOCATION, OBJECTIVE,
-    // SKILLS, EXPERIENCE, PROJECTS). Older prompts / LLMs may emit only
-    // 4 sections (no LOCATION) or 3 (no LOCATION + no OBJECTIVE). We
-    // gracefully degrade to "" for the missing leading sections so the
-    // template still compiles and the dashboard / popup never crashes.
+    const text = String(raw || '');
+
+    // Primary path: named markers. Match each marker plus its body
+    // (everything until the next marker or end-of-string). Tolerant of
+    // mixed case, optional whitespace, and 2-4 leading/trailing equals.
+    const markerRe =
+        /={2,4}\s*(LOCATION|OBJECTIVE|SKILLS|EXPERIENCE|PROJECTS)\s*={2,4}/gi;
+    const matches: Array<{ name: string; start: number; end: number }> = [];
+    let m: RegExpExecArray | null;
+    while ((m = markerRe.exec(text)) !== null) {
+        matches.push({
+            name: m[1].toUpperCase(),
+            start: m.index,
+            end: m.index + m[0].length,
+        });
+    }
+    if (matches.length >= 2) {
+        const named: Record<string, string> = {};
+        for (let i = 0; i < matches.length; i++) {
+            const cur = matches[i];
+            const next = matches[i + 1];
+            const body = text.slice(cur.end, next ? next.start : text.length);
+            // First occurrence wins — if the LLM accidentally repeats
+            // a marker, keep the earlier (and presumably more complete)
+            // body.
+            if (!named[cur.name]) named[cur.name] = body;
+        }
+        const location = stripFences(named['LOCATION'] || '')
+            .replace(/^["']|["']$/g, '')
+            .trim();
+        let objective = stripFences(named['OBJECTIVE'] || '');
+        // Defensive: if the LLM echoed the city string into the start
+        // of the objective ("Bengaluru, Karnataka, India\nSoftware
+        // Engineer with..."), strip the duplicated location prefix.
+        if (location && objective.startsWith(location)) {
+            objective = objective.slice(location.length).replace(/^[\s,.\-:;\u2014\u2013]+/, '').trim();
+        }
+        // If the entire objective IS just the location, blank it.
+        if (objective.trim() === location.trim()) {
+            objective = '';
+        }
+        return {
+            location,
+            objective,
+            skills: stripFences(named['SKILLS'] || ''),
+            experience: stripFences(named['EXPERIENCE'] || ''),
+            projects: stripFences(named['PROJECTS'] || ''),
+        };
+    }
+
+    // Fallback path: legacy [SECTION_SEPARATOR] index-based split. Used
+    // when the LLM ignores the new named markers and falls back to the
+    // old format. The same defensive degradation as before applies.
+    const parts = text.split(/\[SECTION_SEPARATOR\]/i);
     if (parts.length >= 5) {
         return {
             location: stripFences(parts[0] || '').replace(/^["']|["']$/g, '').trim(),
