@@ -6,9 +6,24 @@ let serverOnline = false;
 let currentTabHost = null;       // host of the active tab when popup opened
 let isPinnedWindow = false;      // true when running in detached popup window
 
+// In a regular popup, `currentWindow:true` IS the user's browser window.
+// In a pinned (detached) window, `currentWindow:true` is the popup window
+// itself, so we'd read the URL of `popup.html?pinned=1` (a chrome-extension://
+// URL) and the host comparison would always fail. Query the last-focused
+// normal window instead so per-tab grey-out keeps working when pinned.
 function getActiveTabUrl() {
     return new Promise((resolve) => {
         try {
+            if (isPinnedWindow && chrome.windows && chrome.windows.getLastFocused) {
+                chrome.windows.getLastFocused({ windowTypes: ['normal'], populate: true }, (win) => {
+                    if (chrome.runtime.lastError || !win || !Array.isArray(win.tabs)) {
+                        return resolve('');
+                    }
+                    const active = win.tabs.find((t) => t.active) || win.tabs[0];
+                    resolve(active ? active.url || '' : '');
+                });
+                return;
+            }
             chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
                 resolve(tabs && tabs[0] ? tabs[0].url || '' : '');
             });
@@ -109,6 +124,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     restoreResumeState();
     applyStaleTabState();
+
+    // In pinned mode the popup outlives tab switches, so refresh the
+    // grey-out + banner whenever the user switches tabs / windows.
+    if (isPinnedWindow && chrome.tabs && chrome.tabs.onActivated) {
+        const refresh = async () => {
+            currentTabHost = safeHost(await getActiveTabUrl());
+            applyStaleTabState();
+        };
+        chrome.tabs.onActivated.addListener(refresh);
+        if (chrome.windows && chrome.windows.onFocusChanged) {
+            chrome.windows.onFocusChanged.addListener(refresh);
+        }
+        if (chrome.tabs.onUpdated) {
+            chrome.tabs.onUpdated.addListener((_id, info) => { if (info.url) refresh(); });
+        }
+    }
 
     // Copy Fields panel
     document.getElementById('refresh-fields-btn').addEventListener('click', loadCopyFields);
