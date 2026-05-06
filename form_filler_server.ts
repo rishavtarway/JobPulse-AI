@@ -128,7 +128,13 @@ async function tryOpenAIChatProvider(
         console.log(`   ⏭️  Skipping ${provider.name} (session-disabled).`);
         return null;
     }
-    for (const modelName of provider.models) {
+    modelLoop: for (const modelName of provider.models) {
+        // Allow ONE inline sleep+retry on a small Retry-After (<=6s) per
+        // model attempt. Avoids paying ~25s of user-visible latency
+        // falling through to NVIDIA when Groq would have been ready in 5s.
+        let inlineRetried = false;
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
         try {
             console.log(`🤖 AI Attempt: Using ${provider.name}:${modelName}...`);
             const response = await fetch(provider.endpoint, {
@@ -154,18 +160,26 @@ async function tryOpenAIChatProvider(
             if (response.status === 429) {
                 // Per-minute rate limit (Groq free tier = 30 req/min). The
                 // Retry-After header tells us exactly when the bucket
-                // refills — usually only a few seconds. Disabling for a
-                // flat 60s pushes the very next call onto the slow NVIDIA
-                // path even when Groq would be ready in 4–5s. Honour the
-                // header, clamp to [3, 30] seconds, fallback 8s.
+                // refills — usually only a few seconds. Falling straight
+                // through to NVIDIA on a 5s rate-limit costs ~25s of
+                // user-visible latency vs sleeping the 5s and retrying
+                // Groq. So:
+                //   retryAfter <= 6s  → sleep + retry inline ONCE.
+                //   retryAfter  > 6s  → disable provider, fall through.
                 const retryAfterHeader = response.headers.get('retry-after') || '';
                 let retrySec = parseFloat(retryAfterHeader);
                 if (!Number.isFinite(retrySec) || retrySec <= 0) {
-                    // Some providers embed it in the JSON instead.
                     const embedded = (data?.error?.message || '').match(/(\d+(?:\.\d+)?)\s*s(?:ec(?:ond)?s?)?\b/i);
                     retrySec = embedded ? parseFloat(embedded[1]) : 8;
                 }
-                retrySec = Math.max(3, Math.min(30, retrySec));
+                retrySec = Math.max(1, Math.min(30, retrySec));
+                if (retrySec <= 6 && !inlineRetried) {
+                    const waitMs = Math.ceil(retrySec * 1000) + 500;
+                    console.warn(`   ⏳ ${provider.name} rate-limited; sleeping ${retrySec}s and retrying inline (faster than fallback).`);
+                    await new Promise((r) => setTimeout(r, waitMs));
+                    inlineRetried = true;
+                    continue; // re-enter the same-model while-loop
+                }
                 disableProvider(provider.name, Math.ceil(retrySec * 1000), `HTTP 429 rate-limit (${retrySec}s)`);
                 return null;
             }
@@ -182,14 +196,17 @@ async function tryOpenAIChatProvider(
             }
             if (!response.ok) {
                 console.warn(`   ⚠️  ${provider.name}:${modelName} HTTP ${response.status} — trying next model.`);
-                continue;
+                continue modelLoop;
             }
             const content = data.choices?.[0]?.message?.content?.trim();
             if (content) return content;
             console.warn(`   ⚠️  ${provider.name}:${modelName} empty content — trying next model.`);
+            continue modelLoop;
         } catch (e: any) {
             console.error(`   ❌ ${provider.name}:${modelName} network error: ${e.message}`);
+            continue modelLoop;
         }
+        } // end while(true) — same-model retry loop
     }
     return null;
 }
@@ -583,12 +600,12 @@ app.post('/api/resume/analyze-jd', async (req, res) => {
 
     console.log(`\n🔍 [JD Analysis] Scanning for keywords...`);
     const prompt = `Act as an expert ATS (Applicant Tracking System) optimizer. 
-Analyze the following Job Description and extract the top 15 most important technical keywords, soft skills, and specific requirements. 
+Analyze the following Job Description and extract the top 25 most important technical keywords, frameworks, soft skills, role-specific verbs, and explicit requirements. Be GREEDY — pull every concrete tech / methodology / domain term the JD mentions, plus any soft-skill phrases that the JD itself emphasises. Avoid generic filler ("team player", "strong communicator") unless the JD specifically calls them out.
 Return ONLY a raw JSON array of strings. NO MARKDOWN. NO EXPLANATION. Just the array.
 Example: ["Node.js", "React"]
 
 JD Text: 
-${safeSlice(jdText, 2000)}`;
+${safeSlice(jdText, 2500)}`;
 
     try {
         const result = await callAI([{ role: 'user', content: prompt }]);
@@ -614,7 +631,7 @@ ${safeSlice(jdText, 2000)}`;
                 .split(',')
                 .map((s: string) => s.trim())
                 .filter((s: string) => s.length > 2 && s.toUpperCase() !== 'UNKNOWN')
-                .slice(0, 15);
+                .slice(0, 25);
         }
 
         if (keywords.length === 0) {
@@ -672,7 +689,7 @@ Emit ONE LINE only. No quotes. No prose. Examples of valid output for this secti
 "DEFAULT"
 
 ═══════════════════════════════════════════════════════════════════
-SECTION 1 — OBJECTIVE (raw LaTeX, exactly 1 sentence, <=260 chars).
+SECTION 1 — OBJECTIVE (raw LaTeX, exactly 1 sentence, <=320 chars).
 
 Use this EXACT structure (replace angle-bracket placeholders):
 Software Engineer with 1.5 years of internship experience in <TOP 3-4 STACK ITEMS FROM THE JD, comma-separated>, seeking full-time <EXACT ROLE TITLE FROM THE JD> roles with a focus on <1-2 JD-critical outcomes like "scalable backends" or "data-driven automation">.
@@ -684,16 +701,18 @@ Rules:
 - No double-quotes. No markdown. One single line.
 
 ═══════════════════════════════════════════════════════════════════
-SECTION 2 — SKILLS (raw LaTeX, MUST use exactly 7 lines, exactly this format):
+SECTION 2 — SKILLS (raw LaTeX, MUST use exactly 8 lines, exactly this format):
 \\textbf{Languages:} ...\\\\[1pt]
 \\textbf{Web:} ...\\\\[1pt]
 \\textbf{Mobile:} ...\\\\[1pt]
 \\textbf{DB \\& Cloud:} ...\\\\[1pt]
 \\textbf{Tools:} ...\\\\[1pt]
 \\textbf{AI \\& APIs:} ...\\\\[1pt]
+\\textbf{Methods:} ...\\\\[1pt]
 \\textbf{Core:} ...
 Each line: <=90 chars after the category. Comma-separated, no trailing period.
 Re-order / swap items so JD-critical tech is FIRST in each line.
+"Methods" line covers methodologies / processes (Agile, Scrum, TDD, Code Review, CI/CD, Cucumber BDD, Pair Programming, etc.) — pick the ones the JD names.
 Do NOT invent skills Rishav doesn't have — only re-prioritise real ones from his data.
 
 ═══════════════════════════════════════════════════════════════════
@@ -703,12 +722,12 @@ Roles (fixed, in this order): IIIT Bangalore — MOSIP | Classplus | TechVastra 
 For EACH role, output EXACTLY this block (replace placeholder text only):
 {\\fontsize{8.4}{10.4}\\selectfont\\textbf{<ROLE TITLE>}\\hfill\\textit{<DATE RANGE>}}\\\\
 {\\fontsize{8.4}{10.4}\\selectfont\\textbf{\\color{accentblue}<COMPANY>}\\hfill <LOCATION>}
-\\begin{itemize}\\fontsize{8.4}{10.4}\\selectfont
+\\begin{itemize}\\fontsize{8.2}{10.0}\\selectfont
   \\item <Bullet 1 tailored to JD, <=90 chars, ONE LINE>
   \\item <Bullet 2 tailored to JD, <=90 chars, ONE LINE>
   \\item <Bullet 3 tailored to JD, <=90 chars, ONE LINE>
+  \\item <Bullet 4 tailored to JD, <=90 chars, ONE LINE>
 \\end{itemize}
-\\vspace{1pt}
 
 BULLET-WRITING TEMPLATES — every bullet MUST follow one of these three shapes:
   Template A (metric-first):  "Achieved <X\\%> <outcome> for <who / feature> using <tech A>, <tech B>, and <tech C>."
@@ -716,12 +735,12 @@ BULLET-WRITING TEMPLATES — every bullet MUST follow one of these three shapes:
   Template C (build-verb):    "<Built | Developed | Shipped> <thing> that <did A, B, and C> using <X>, <Y>, and <Z>."
 
 Rules for bullets:
-- Exactly 3 bullets per role (no more, no less). The page is dense; 5 roles x 3 bullets fits one page.
+- Exactly 4 bullets per role (no more, no less). The page is dense; 5 roles x 4 bullets fits one page.
 - Each bullet MUST stay on a single line in the narrow right column. Hard cap <=90 characters; aim for ~80.
   Anything over 90 chars wraps to a second line and breaks the 1-page layout.
   If the bullet is borderline, DROP adjectives / fillers ('successfully', 'effectively', 'in order to', 'various', 'with a focus on ...', 'ensuring ...') and trailing keyword-padding clauses instead of letting it wrap.
 - Do NOT pad bullets with trailing 'with a focus on <keyword>' or 'ensuring <keyword>' clauses just to hit JD keywords — weave keywords into the main clause or move them to Skills.
-- Rotate templates A/B/C across the 3 bullets of a role so they don't all look the same.
+- Rotate templates across the 4 bullets of a role so they don't all look the same. Suggested: A, B, C, A (or any A/B/C permutation that flows naturally).
 - Rewrite to reflect JD priorities, but STAY TRUTHFUL to Rishav's actual work (no fabricated companies, dates, or projects).
 - Always include a concrete metric (\\textbf{40\\%}, \\textbf{10k+ users}, PR \\#1234, \\textbf{60fps}, etc.) — use bold for the metric.
 - Use \\textbf{metric\\%} / \\textbf{Nk+ users} / PR \\#NNNN (ALWAYS escape \\# and \\%).
@@ -735,18 +754,17 @@ Projects (fixed): Tech Stream Community | CoinWatch | ProResume | Scholar Track.
 For EACH project output EXACTLY:
 {\\fontsize{8.4}{10.4}\\selectfont\\textbf{<PROJECT NAME>}\\hfill\\href{<LIVE OR GITHUB URL>}{Live | GitHub}}\\\\
 {\\fontsize{7.8}{9.6}\\selectfont\\textit{<TECH STACK, \\textbullet\\ separated>}}
-\\begin{itemize}\\fontsize{8.4}{10.4}\\selectfont
+\\begin{itemize}\\fontsize{8.2}{10.0}\\selectfont
   \\item <Bullet 1 tailored to JD, <=90 chars, ONE LINE>
   \\item <Bullet 2 tailored to JD, <=90 chars, ONE LINE>
 \\end{itemize}
-\\vspace{1pt}
 
 PROJECT-BULLET TEMPLATE — follow this shape:
   "<Short Action Verb> <what> that <does A, B, and C> using <X>, <Y>, and <Z>. <Quantified success or adoption metric>."
 Example: "Built a 60fps crypto portfolio tracker that supports live prices, multi-currency, and Supabase sync using React Native, Zustand, and CoinGecko API. Serves 500+ beta users."
 
 Rules for projects:
-- Exactly 2 bullets per project (tight — the page is already dense).
+- Exactly 2 bullets per project (kept tight — Experience now uses 4 bullets per role, so projects stay 2 each to fit one page).
 - Each bullet MUST stay on a single line in the narrow right column. Hard cap <=90 characters; aim for ~80. Drop adjectives and trailing 'with a focus on ...' clauses before letting it wrap.
 - Links (URLs) are fixed, do not change them.
 - Bullet 1 MUST follow the PROJECT-BULLET TEMPLATE (build-verb + tech stack + quantified success).
@@ -757,7 +775,7 @@ GLOBAL RULES:
 - Output ONLY raw LaTeX across the OBJECTIVE / SKILLS / EXPERIENCE / PROJECTS sections; LOCATION is plain text. Use the exact named markers ===LOCATION===, ===OBJECTIVE===, ===SKILLS===, ===EXPERIENCE===, ===PROJECTS=== to delimit them.
 - NO markdown fences. NO "## Objective / ## Skills" headers. NO explanation text.
 - NEVER USE MARKDOWN EMPHASIS. Specifically: never wrap text with **double asterisks** for bold or *single asterisks* for italic — these render literally in the PDF and instantly look AI-generated. Use \\textbf{...} for bold and \\emph{...} for italic instead. The ONLY acceptable asterisk in your output is inside an already-correct \\textbf{...} or \\emph{...} command, NEVER as a standalone markdown delimiter.
-- Every user-selected keyword MUST appear at least once across the combined Objective + Skills + Experience + Projects.
+- Every user-selected keyword MUST appear at least once across the combined Objective + Skills + Experience + Projects, AND high-priority JD-critical keywords (the first 5 in the user's selected list) SHOULD appear in 2+ sections (e.g. once in a Skills line and once in an Experience or Project bullet) so the ATS scoring picks them up.
 - If a keyword does not naturally fit any real bullet, weave it into the Objective or the closest Skills line. Do NOT fabricate experience.
 - Total output must FILL ONE A4 page using 9.5pt font; stay within the bullet counts above.
 - NEVER use em-dash or en-dash characters. Always use two hyphens (--) instead.
