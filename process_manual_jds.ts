@@ -253,7 +253,11 @@ async function main() {
       link: job?.link ? String(job.link).trim() : null,
       description: String(job?.description || '').trim(),
     };
-    const idx = Number.isFinite(job?.postIndex) ? Math.max(1, Math.min(jds.length, Number(job.postIndex))) : 1;
+    // LLMs occasionally emit numeric fields as strings ("postIndex": "2").
+    // Coerce first, then validate — Number.isFinite() refuses strings,
+    // which would silently force every job back to jds[0].
+    const idxRaw = Number(job?.postIndex);
+    const idx = Number.isFinite(idxRaw) && idxRaw >= 1 ? Math.max(1, Math.min(jds.length, Math.floor(idxRaw))) : 1;
     const sourceText = jds[idx - 1] || '';
     const linkLabel = j.link ? `🔗 ${j.link}` : (j.email ? `📧 ${j.email}` : '⚠️ no link / no email');
     console.log(`   📌 ${j.company} — ${j.role} (${linkLabel})`);
