@@ -754,6 +754,19 @@
 
                 <div class="bento-card">
                     <p
+                        style="font-size:10px; font-weight:900; color:var(--text-muted); margin-bottom:12px; letter-spacing:0.1em; text-transform:uppercase;">
+                        Manual JD Paste</p>
+                    <p style="font-size:12px; color:var(--text-secondary); margin-bottom:12px; line-height:1.5;">Paste raw job postings (one per box) from anywhere on the internet. AI extracts company / role / contact / link and adds them to your dashboard.</p>
+                    <div id="manual-jd-boxes" style="display:flex; flex-direction:column; gap:10px;"></div>
+                    <div style="display:flex; gap:8px; margin-top:12px; align-items:stretch;">
+                        <button id="btn-jd-minus" class="btn-pill" style="flex:0 0 44px; background:rgba(255,255,255,0.06); color:var(--text-primary); border:1px solid var(--border); font-size:18px; font-weight:900;" onclick="changeManualJdCount(-1)" title="Remove a box">−</button>
+                        <button id="btn-jd-plus" class="btn-pill" style="flex:0 0 44px; background:rgba(255,255,255,0.06); color:var(--text-primary); border:1px solid var(--border); font-size:18px; font-weight:900;" onclick="changeManualJdCount(1)" title="Add a box">+</button>
+                        <button id="btn-jd-process" class="btn-pill btn-orange" style="flex:1; padding:10px 16px; font-size:12px; font-weight:900;" onclick="processManualJds()">🤖 PROCESS ALL</button>
+                    </div>
+                </div>
+
+                <div class="bento-card">
+                    <p
                         style="font-size:10px; font-weight:900; color:var(--text-muted); margin-bottom:16px; letter-spacing:0.1em; text-transform:uppercase;">
                         YC Cold Research</p>
                     <textarea id="yc-input"
@@ -1105,8 +1118,27 @@
                     hour: '2-digit', minute: '2-digit', hour12: true
                 });
 
+                // Apply-on-Portal logic: button is ALWAYS visible. Prefer the
+                // AI-extracted apply link; fall back to the original post URL
+                // (NAS / Telegram / source) so the user can always reach the
+                // posting from the dashboard. As a final fallback (no URLs at
+                // all) show a disabled pill so the layout stays consistent.
+                const applyHref = item.link || item.postUrl || '';
+                const applyLabel = item.link ? 'APPLY ON PORTAL' : (item.postUrl ? 'READ ORIGINAL POST' : 'NO LINK AVAILABLE');
+                const applyBtnClass = item.link ? 'btn-pill btn-orange' : 'btn-pill';
+                const applyBtnStyle = item.link
+                    ? 'padding:10px 24px; font-size:12px;'
+                    : (item.postUrl
+                        ? 'padding:10px 24px; font-size:12px; background:rgba(245,138,33,0.18); color:var(--accent); border:1px solid var(--accent);'
+                        : 'padding:10px 24px; font-size:12px; background:rgba(255,255,255,0.06); color:var(--text-muted); pointer-events:none; opacity:0.6;');
+                // The full job description body (always-rendered toggle so
+                // user can read the full JD inline without triggering the
+                // Edit/Sync modal).
+                const jdBody = item.jobDescription || item.text || item.description || '';
+                const jdToggleLabel = item.status === 'applied' ? '🔍 View Original Job Post' : '📄 View Full Job Description';
+
                 return `
-                        <div class="job-card reveal" onclick="openEdit('${item.id}', '${item.status}', '${encodeURIComponent(item.notes || '')}')">
+                        <div class="job-card reveal">
                             ${isN ? '<div class="latest-ribbon">🔥 LATEST</div>' : ''}
                             <div style="display:flex; justify-content:space-between; margin-bottom:16px; align-items: flex-start;">
                                 <div class="job-ico">${item.type === 'yc' ? '🍊' : '🚀'}</div>
@@ -1124,23 +1156,23 @@
                             <p class="job-meta">${item.role} @ ${name}</p>
                             
                             <div style="font-size:10px; font-weight:800; color:var(--text-muted); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.05em;">
-                                ${item.status === 'applied' ? '📧 Drafted Email (in your Gmail)' : '📝 Job Description'}
+                                ${item.status === 'applied' ? '📧 Drafted Email (in your Gmail)' : '📝 Job Summary'}
                             </div>
                             <div class="job-desc">${(item.description || item.text || 'Discovering metadata...').replace(/\n/g, '<br>')}</div>
 
-                            ${(item.jobDescription && item.status === 'applied') ? `
-                            <div class="job-post-toggle" onclick="event.stopPropagation(); toggleJobPost(this)">
-                                <span>🔍 View Original Job Post</span>
+                            ${jdBody ? `
+                            <div class="job-post-toggle" onclick="toggleJobPost(this)">
+                                <span>${jdToggleLabel}</span>
                                 <span class="chevron">▼</span>
                             </div>
-                            <div class="original-job-post" onclick="event.stopPropagation()">
-                                ${(item.jobDescription || '').replace(/\n/g, '<br>')}
+                            <div class="original-job-post">
+                                ${jdBody.replace(/\n/g, '<br>')}
                             </div>
                             ` : ''}
                             
                             <div style="margin-top:24px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
-                                ${item.link ? `<a href="${item.link}" target="_blank" onclick="event.stopPropagation()" class="btn-pill btn-orange" style="padding:10px 24px; font-size:12px;">APPLY ON PORTAL</a>` : ''}
-                                ${(!item.link && item.postUrl) ? `<a href="${item.postUrl}" target="_blank" onclick="event.stopPropagation()" class="btn-pill" style="padding:10px 24px; font-size:12px; background:rgba(255,255,255,0.08); color:var(--text-muted);">VIEW POST ON NAS</a>` : ''}
+                                <a href="${applyHref || '#'}" ${applyHref ? 'target="_blank"' : ''} class="${applyBtnClass}" style="${applyBtnStyle}">${applyLabel}</a>
+                                <button class="btn-pill" style="padding:10px 18px; font-size:11px; background:rgba(255,255,255,0.06); color:var(--text-muted); border:1px solid rgba(255,255,255,0.12);" onclick="openEdit('${item.id}', '${item.status}', '${encodeURIComponent(item.notes || '')}')">✏️ EDIT STATUS</button>
                                 <span style="font-size:10px; font-weight:700; color:var(--text-muted); margin-left:auto;">ID: ${item.telegramId || 'AUTO'}</span>
                             </div>
                         </div>
@@ -1217,6 +1249,84 @@
             }
         }
 
+        // ============================================================
+        // Manual JD Paste — N adjustable text-area boxes. User pastes a
+        // raw JD into each, hits Process All, and the server-side LLM
+        // pipeline extracts company / role / contact / apply-link, then
+        // appends to applications.json (same shape as the NAS scraper).
+        // ============================================================
+        let manualJdCount = 3;
+
+        function renderManualJdBoxes() {
+            const host = document.getElementById('manual-jd-boxes');
+            if (!host) return;
+            // Preserve any text the user has already typed.
+            const existing = Array.from(host.querySelectorAll('textarea')).map(t => t.value);
+            host.innerHTML = '';
+            for (let i = 0; i < manualJdCount; i++) {
+                const wrap = document.createElement('div');
+                wrap.style.cssText = 'display:flex; gap:8px; align-items:flex-start;';
+                const num = document.createElement('div');
+                num.style.cssText = 'flex:0 0 28px; height:28px; line-height:28px; text-align:center; background:var(--bg); border:1px solid var(--border); border-radius:50%; font-size:11px; font-weight:900; color:var(--accent); margin-top:6px;';
+                num.textContent = String(i + 1);
+                const ta = document.createElement('textarea');
+                ta.style.cssText = 'flex:1; min-height:80px; max-height:240px; background:var(--bg); border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:12px; resize:vertical; outline:none; color:var(--text-primary); font-family:inherit;';
+                ta.placeholder = `Paste job posting #${i + 1} here…`;
+                ta.value = existing[i] || '';
+                ta.dataset.manualJd = '1';
+                wrap.appendChild(num);
+                wrap.appendChild(ta);
+                host.appendChild(wrap);
+            }
+        }
+
+        function changeManualJdCount(delta) {
+            const next = Math.max(1, Math.min(15, manualJdCount + delta));
+            if (next === manualJdCount) return;
+            manualJdCount = next;
+            renderManualJdBoxes();
+        }
+
+        async function processManualJds() {
+            const host = document.getElementById('manual-jd-boxes');
+            const btn = document.getElementById('btn-jd-process');
+            if (!host || !btn) return;
+            const jds = Array.from(host.querySelectorAll('textarea'))
+                .map(t => (t.value || '').trim())
+                .filter(t => t.length > 30);
+            if (!jds.length) {
+                alert('Paste at least one JD (>30 characters) into a box first.');
+                return;
+            }
+            const original = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = `🤖 PROCESSING ${jds.length}…`;
+            // Surface the terminal so user sees progress.
+            const term = document.getElementById('term-view');
+            if (term) term.style.display = 'block';
+            try {
+                const r = await fetch('/api/process-manual-jds', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ jds })
+                });
+                const out = await r.json().catch(() => ({}));
+                if (!r.ok) {
+                    alert(`❌ Manual JD processing failed: ${out.error || r.statusText}`);
+                } else {
+                    pollLogs();
+                    // Refresh dashboard once the spawned script finishes.
+                    setTimeout(() => syncData(), 60_000);
+                }
+            } catch (e) {
+                alert(`❌ Network error: ${e.message || e}`);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = original;
+            }
+        }
+
+        renderManualJdBoxes();
         syncData();
     </script>
 </body>

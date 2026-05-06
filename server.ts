@@ -579,6 +579,65 @@ app.post('/api/trigger-nas', (req, res) => {
 });
 
 // ============================================================
+// API: Manual JD Paste — bulk-process raw JDs the user pasted
+// from anywhere on the internet through the same Groq-first
+// extraction pipeline used for NAS posts.
+// ============================================================
+app.post('/api/process-manual-jds', (req, res) => {
+    if (isRunning) {
+        return res.status(409).json({ error: 'Another process is already running. Please wait.' });
+    }
+    const jds = Array.isArray(req.body?.jds) ? req.body.jds.filter((j: any) => typeof j === 'string' && j.trim().length > 30) : [];
+    if (!jds.length) {
+        return res.status(400).json({ error: 'No usable JDs in payload (each JD must be > 30 characters).' });
+    }
+
+    // Persist the JDs to a temp file so we don't have to pipe them
+    // through argv (which can hit OS arg-length limits with 15 boxes).
+    const tmpFile = path.join(process.cwd(), `tmp_manual_jds_${Date.now()}.json`);
+    try {
+        fs.writeFileSync(tmpFile, JSON.stringify({ jds }, null, 2), 'utf8');
+    } catch (e: any) {
+        return res.status(500).json({ error: `Failed to persist JDs: ${e.message}` });
+    }
+
+    isRunning = true;
+    currentLogs = [`📝 Manual JD Processor Initiated at ${new Date().toLocaleString()} — ${jds.length} JD(s)\n`];
+
+    currentChildProcess = spawn('npx', ['tsx', 'process_manual_jds.ts', tmpFile], {
+        cwd: process.cwd(),
+        env: { ...process.env, SERVER_PORT: String(PORT) },
+        shell: true,
+    });
+
+    let stdoutBuffer = '';
+    currentChildProcess.stdout?.on('data', (data: Buffer) => {
+        stdoutBuffer += data.toString();
+        const lines = stdoutBuffer.split('\n');
+        stdoutBuffer = lines.pop() || '';
+        lines.forEach((line: string) => { if (line) currentLogs.push(line + '\n'); });
+    });
+    currentChildProcess.stderr?.on('data', (data: Buffer) => {
+        currentLogs.push(data.toString());
+    });
+    currentChildProcess.on('close', (code: number | null) => {
+        if (stdoutBuffer) currentLogs.push(stdoutBuffer + '\n');
+        currentLogs.push(`\n✅ Manual JD processor finished with exit code ${code}\n`);
+        isRunning = false;
+        currentChildProcess = null;
+        // Tmp file is cleaned up by the script itself, but make sure.
+        try { fs.unlinkSync(tmpFile); } catch {}
+    });
+    currentChildProcess.on('error', (err: Error) => {
+        currentLogs.push(`\n❌ Failed to start Manual JD processor: ${err.message}\n`);
+        isRunning = false;
+        currentChildProcess = null;
+    });
+
+    res.json({ message: `Processing ${jds.length} JD(s)…`, count: jds.length });
+});
+
+// ============================================================
 // API: Follow-up Draft Generator
 // ============================================================
 app.post('/api/send-followups', (req, res) => {
