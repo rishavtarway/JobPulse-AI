@@ -6,29 +6,39 @@ let serverOnline = false;
 let currentTabHost = null;       // host of the active tab when popup opened
 let isPinnedWindow = false;      // true when running in detached popup window
 
-// In a regular popup, `currentWindow:true` IS the user's browser window.
-// In a pinned (detached) window, `currentWindow:true` is the popup window
-// itself, so we'd read the URL of `popup.html?pinned=1` (a chrome-extension://
-// URL) and the host comparison would always fail. Query the last-focused
-// normal window instead so per-tab grey-out keeps working when pinned.
-function getActiveTabUrl() {
+// Returns the user's actual active browser tab — works in BOTH ephemeral
+// chrome popups and detached pinned windows.
+//
+// In a regular popup, `currentWindow:true` IS the user's browser window,
+// so chrome.tabs.query is fine. In a pinned (detached) window,
+// `currentWindow:true` is the popup window itself, which only contains
+// `popup.html?pinned=1` (a chrome-extension:// URL) — sendMessage to
+// that tab would fail and getActiveTabUrl would return the wrong host.
+// In that case we fall back to chrome.windows.getLastFocused with
+// `windowTypes:['normal']` so we always land on a real browser tab.
+function getActiveTab() {
     return new Promise((resolve) => {
         try {
             if (isPinnedWindow && chrome.windows && chrome.windows.getLastFocused) {
                 chrome.windows.getLastFocused({ windowTypes: ['normal'], populate: true }, (win) => {
                     if (chrome.runtime.lastError || !win || !Array.isArray(win.tabs)) {
-                        return resolve('');
+                        return resolve(null);
                     }
-                    const active = win.tabs.find((t) => t.active) || win.tabs[0];
-                    resolve(active ? active.url || '' : '');
+                    const active = win.tabs.find((t) => t.active) || win.tabs[0] || null;
+                    resolve(active);
                 });
                 return;
             }
             chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-                resolve(tabs && tabs[0] ? tabs[0].url || '' : '');
+                resolve(tabs && tabs[0] ? tabs[0] : null);
             });
-        } catch { resolve(''); }
+        } catch { resolve(null); }
     });
+}
+
+async function getActiveTabUrl() {
+    const t = await getActiveTab();
+    return t && t.url ? t.url : '';
 }
 
 function safeHost(url) {
@@ -301,61 +311,66 @@ async function scanJobDescription() {
     status.textContent = "🔍 Extracting from page...";
     scanBtn.disabled = true;
 
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (!tabs[0]) return;
-        chrome.tabs.sendMessage(tabs[0].id, { action: 'extract_jd' }, async (resp) => {
-            if (chrome.runtime.lastError) {
-                status.textContent = "❌ Extension updated. Please Refresh the page!";
-                scanBtn.disabled = false;
-                return;
-            }
+    // Use getActiveTab() (not chrome.tabs.query directly) so this works in
+    // both ephemeral popup and pinned/detached window mode.
+    const tab = await getActiveTab();
+    if (!tab || !tab.id) {
+        status.textContent = "❌ No active browser tab — open a job page first.";
+        scanBtn.disabled = false;
+        return;
+    }
+    chrome.tabs.sendMessage(tab.id, { action: 'extract_jd' }, async (resp) => {
+        if (chrome.runtime.lastError) {
+            status.textContent = "❌ Extension updated. Please Refresh the page!";
+            scanBtn.disabled = false;
+            return;
+        }
 
-            if (!resp || !resp.jdText) {
-                status.textContent = "❌ Failed to extract JD. Refresh page?";
-                scanBtn.disabled = false;
-                return;
-            }
+        if (!resp || !resp.jdText) {
+            status.textContent = "❌ Failed to extract JD. Refresh page?";
+            scanBtn.disabled = false;
+            return;
+        }
 
-            currentJdText = resp.jdText;
-            status.textContent = "🧠 Analyzing requirements...";
+        currentJdText = resp.jdText;
+        status.textContent = "🧠 Analyzing requirements...";
 
-            try {
-                const apiResp = await fetch(`${FORM_SERVER}/api/resume/analyze-jd`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    // Send the tab URL so the server can keep this JD as context
-                    // for every form field on this page (auto-fill stays consistent).
-                    body: JSON.stringify({ jdText: currentJdText, tabUrl: tabs[0].url })
-                });
-                const { keywords } = await apiResp.json();
+        try {
+            const apiResp = await fetch(`${FORM_SERVER}/api/resume/analyze-jd`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                // Send the tab URL so the server can keep this JD as context
+                // for every form field on this page (auto-fill stays consistent).
+                body: JSON.stringify({ jdText: currentJdText, tabUrl: tab.url })
+            });
+            const { keywords } = await apiResp.json();
 
-                currentKeywords = Array.isArray(keywords) ? keywords : [];
-                // NEW: every keyword starts SELECTED — user clicks to *deselect*,
-                // not to select. Matches the user's expectation that "the AI
-                // already analysed them, it should just use them".
-                currentSelectedSet = new Set(currentKeywords);
+            currentKeywords = Array.isArray(keywords) ? keywords : [];
+            // NEW: every keyword starts SELECTED — user clicks to *deselect*,
+            // not to select. Matches the user's expectation that "the AI
+            // already analysed them, it should just use them".
+            currentSelectedSet = new Set(currentKeywords);
 
-                renderKeywords(currentKeywords, currentSelectedSet);
-                status.textContent = `✅ Scan complete — ${currentKeywords.length} keywords auto-selected (click to deselect).`;
-                document.getElementById('keyword-section').style.display = 'block';
+            renderKeywords(currentKeywords, currentSelectedSet);
+            status.textContent = `✅ Scan complete — ${currentKeywords.length} keywords auto-selected (click to deselect).`;
+            document.getElementById('keyword-section').style.display = 'block';
 
-                savePersisted({
-                    jdText: currentJdText,
-                    keywords: currentKeywords,
-                    selected: Array.from(currentSelectedSet),
-                    optimizedLatex: "",
-                    scannedHost: safeHost(tabs[0].url || ''),
-                });
-                // The scan just happened on the active tab — ungrey the popup.
-                document.body.classList.remove('stale-tab');
-                const banner = document.getElementById('stale-tab-banner');
-                if (banner) banner.style.display = 'none';
-            } catch (e) {
-                status.textContent = "❌ AI analysis failed.";
-            } finally {
-                scanBtn.disabled = false;
-            }
-        });
+            savePersisted({
+                jdText: currentJdText,
+                keywords: currentKeywords,
+                selected: Array.from(currentSelectedSet),
+                optimizedLatex: "",
+                scannedHost: safeHost(tab.url || ''),
+            });
+            // The scan just happened on the active tab — ungrey the popup.
+            document.body.classList.remove('stale-tab');
+            const banner = document.getElementById('stale-tab-banner');
+            if (banner) banner.style.display = 'none';
+        } catch (e) {
+            status.textContent = "❌ AI analysis failed.";
+        } finally {
+            scanBtn.disabled = false;
+        }
     });
 }
 
@@ -461,16 +476,21 @@ function downloadOptimizedPdf() {
     showStatus('📥 Opening PDF...', 'ok');
 }
 
-function fillCurrentTab() {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (!tabs[0]) return;
-        chrome.tabs.sendMessage(tabs[0].id, { action: 'manual_fill' }, (r) => {
-            if(chrome.runtime.lastError) {
-                showStatus("❌ Please refresh the page first", "error");
-            } else {
-                showStatus("✨ Scanning...", "ok");
-            }
-        });
+async function fillCurrentTab() {
+    // getActiveTab() returns the user's real browser tab even when the
+    // popup is in pinned/detached mode (where currentWindow=true would
+    // resolve to the popup window's own chrome-extension:// tab).
+    const tab = await getActiveTab();
+    if (!tab || !tab.id) {
+        showStatus("❌ No active browser tab — open a form first", "error");
+        return;
+    }
+    chrome.tabs.sendMessage(tab.id, { action: 'manual_fill' }, () => {
+        if (chrome.runtime.lastError) {
+            showStatus("❌ Please refresh the page first", "error");
+        } else {
+            showStatus("✨ Scanning...", "ok");
+        }
     });
 }
 
