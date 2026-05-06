@@ -3,6 +3,22 @@ const DASHBOARD = 'http://127.0.0.1:3000';
 
 let selectedTask = null;
 let serverOnline = false;
+let currentTabHost = null;       // host of the active tab when popup opened
+let isPinnedWindow = false;      // true when running in detached popup window
+
+function getActiveTabUrl() {
+    return new Promise((resolve) => {
+        try {
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                resolve(tabs && tabs[0] ? tabs[0].url || '' : '');
+            });
+        } catch { resolve(''); }
+    });
+}
+
+function safeHost(url) {
+    try { return new URL(url).host || ''; } catch { return ''; }
+}
 
 // ─────────────────────────────────────────────────────────────────
 // Persistence — chrome-extension popups are ephemeral (every close
@@ -48,10 +64,29 @@ function clearPersisted() {
 // ─────────────────────────────────────────────────────────────────
 // Initialize on load
 // ─────────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    // ?pinned=1 is set by the pin button when it spawns a detached
+    // window so we can hide the pin button (it's already pinned),
+    // widen the body, and skip the rest of the chrome-popup
+    // shortcuts that don't apply.
+    isPinnedWindow = (new URLSearchParams(location.search)).get('pinned') === '1';
+    if (isPinnedWindow) {
+        document.body.classList.add('pinned');
+        const pin = document.getElementById('pin-btn');
+        if (pin) pin.style.display = 'none';
+    }
+
     document.getElementById('fill-tab-btn').addEventListener('click', fillCurrentTab);
     document.getElementById('refresh-tasks-btn').addEventListener('click', loadTasks);
     document.getElementById('open-selected-btn').addEventListener('click', openAndFill);
+
+    // Pin/detach handler — spawns the same popup.html in a standalone
+    // chrome window so it survives tab switches. The new window keeps a
+    // separate localStorage namespace, so we hand-off the most recent
+    // resume state by stashing a transient flag in chrome.storage.local
+    // (best-effort — fine to fail on permissions).
+    const pinBtn = document.getElementById('pin-btn');
+    if (pinBtn) pinBtn.addEventListener('click', openAsDetachedWindow);
 
     // Toggle UI Listeners
     document.getElementById('tab-filler').addEventListener('click', () => switchTab('filler'));
@@ -64,13 +99,52 @@ document.addEventListener('DOMContentLoaded', () => {
 
     checkServer();
     loadTasks();
+
+    // Per-tab state — grab the active tab's host BEFORE restoring resume
+    // state so we can compare it to the host the persisted scan came from
+    // and visually grey the popup if they don't match (the saved JD is
+    // for a different page than what the user is currently on).
+    const url = await getActiveTabUrl();
+    currentTabHost = safeHost(url);
+
     restoreResumeState();
+    applyStaleTabState();
 
     // Copy Fields panel
     document.getElementById('refresh-fields-btn').addEventListener('click', loadCopyFields);
     document.getElementById('copy-fields-search').addEventListener('input', filterCopyFields);
     loadCopyFields();
 });
+
+function openAsDetachedWindow() {
+    const url = chrome.runtime.getURL('popup.html?pinned=1');
+    try {
+        chrome.windows.create({ url, type: 'popup', width: 420, height: 760, focused: true }, () => {
+            window.close();
+        });
+    } catch (e) {
+        showStatus('❗ Could not pin (' + e.message + ')', 'error');
+    }
+}
+
+// Greys-out the popup when the current tab is from a different host than
+// the host of the persisted scan. The Resume Booster state can live for
+// hours, so without this the user couldn't tell whether the keyword
+// pills + boosted PDF below match their current tab or a previous one.
+function applyStaleTabState() {
+    const state = loadPersisted();
+    const scannedHost = state && state.scannedHost ? state.scannedHost : '';
+    const banner = document.getElementById('stale-tab-banner');
+    const hostSpan = document.getElementById('stale-tab-host');
+    if (!scannedHost || !currentTabHost || scannedHost === currentTabHost) {
+        document.body.classList.remove('stale-tab');
+        if (banner) banner.style.display = 'none';
+        return;
+    }
+    document.body.classList.add('stale-tab');
+    if (banner) banner.style.display = 'block';
+    if (hostSpan) hostSpan.textContent = scannedHost;
+}
 
 function switchTab(tab) {
     const fillerBtn = document.getElementById('tab-filler');
@@ -239,7 +313,12 @@ async function scanJobDescription() {
                     keywords: currentKeywords,
                     selected: Array.from(currentSelectedSet),
                     optimizedLatex: "",
+                    scannedHost: safeHost(tabs[0].url || ''),
                 });
+                // The scan just happened on the active tab — ungrey the popup.
+                document.body.classList.remove('stale-tab');
+                const banner = document.getElementById('stale-tab-banner');
+                if (banner) banner.style.display = 'none';
             } catch (e) {
                 status.textContent = "❌ AI analysis failed.";
             } finally {
@@ -524,33 +603,46 @@ function renderCopyFields(chips) {
     }).join('');
     list.innerHTML = html;
 
-    // Wire up click-to-copy
-    list.querySelectorAll('.copy-chip').forEach((el) => {
-        el.addEventListener('click', async () => {
-            const key = el.getAttribute('data-cfv');
-            const [groupName, idxStr] = key.split('::');
-            const idx = parseInt(idxStr, 10);
-            const value = (byGroup[groupName] || [])[idx]?.value || '';
-            try {
-                await navigator.clipboard.writeText(value);
-                const prev = el.style.background;
-                el.style.background = '#C6F6D5';
-                showStatus(`Copied: ${value.slice(0, 40)}${value.length > 40 ? '…' : ''}`, 'success');
-                setTimeout(() => { el.style.background = prev || '#F7FAFC'; }, 600);
-            } catch (e) {
-                showStatus(`Copy failed: ${e.message}`, 'error');
-            }
-        });
-    });
+    // Single delegated click listener instead of one-per-chip — kills the
+    // scroll-jank on long field directories (Rishav reported visible lag on
+    // ~150 chips with per-chip listeners). Using closures (byGroup) on
+    // every render is cheap since this only fires on click.
+    if (list._copyHandler) list.removeEventListener('click', list._copyHandler);
+    list._copyHandler = async (ev) => {
+        const el = ev.target.closest && ev.target.closest('.copy-chip');
+        if (!el || !list.contains(el)) return;
+        const key = el.getAttribute('data-cfv');
+        if (!key) return;
+        const [groupName, idxStr] = key.split('::');
+        const idx = parseInt(idxStr, 10);
+        const value = (byGroup[groupName] || [])[idx]?.value || '';
+        try {
+            await navigator.clipboard.writeText(value);
+            const prev = el.style.background;
+            el.style.background = '#C6F6D5';
+            showStatus(`Copied: ${value.slice(0, 40)}${value.length > 40 ? '…' : ''}`, 'success');
+            setTimeout(() => { el.style.background = prev || '#F7FAFC'; }, 600);
+        } catch (e) {
+            showStatus(`Copy failed: ${e.message}`, 'error');
+        }
+    };
+    list.addEventListener('click', list._copyHandler);
 }
 
+// Debounced — every keystroke previously rebuilt the entire chip list,
+// which thrashed layout on 150+ chips. 100ms is below the perceptible
+// threshold but lets fast typing skip intermediate filters.
+let _filterTimer = null;
 function filterCopyFields() {
-    const q = (document.getElementById('copy-fields-search').value || '').toLowerCase().trim();
-    if (!q) { renderCopyFields(_copyFieldsCache); return; }
-    const filtered = _copyFieldsCache.filter((c) =>
-        c.label.toLowerCase().includes(q) ||
-        c.value.toLowerCase().includes(q) ||
-        c.group.toLowerCase().includes(q)
-    );
-    renderCopyFields(filtered);
+    if (_filterTimer) clearTimeout(_filterTimer);
+    _filterTimer = setTimeout(() => {
+        const q = (document.getElementById('copy-fields-search').value || '').toLowerCase().trim();
+        if (!q) { renderCopyFields(_copyFieldsCache); return; }
+        const filtered = _copyFieldsCache.filter((c) =>
+            c.label.toLowerCase().includes(q) ||
+            c.value.toLowerCase().includes(q) ||
+            c.group.toLowerCase().includes(q)
+        );
+        renderCopyFields(filtered);
+    }, 100);
 }

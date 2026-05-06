@@ -579,6 +579,71 @@ app.post('/api/trigger-nas', (req, res) => {
 });
 
 // ============================================================
+// API: Telegram Channel Scraper
+// Pulls the latest messages from "Mentorsetu Premium 1.1" (or any
+// channel set via TELEGRAM_CHANNEL_TITLE env), extracts jobs, and
+// drafts emails / saves manual rows the same way as NAS / Manual JDs.
+// First run prompts for OTP in the *server's* terminal — the user
+// has to be looking at the terminal that spawned server.ts.
+// ============================================================
+app.post('/api/trigger-telegram', (req, res) => {
+    if (isRunning) {
+        return res.json({ success: false, message: 'Process already in flight.' });
+    }
+    isRunning = true;
+    currentLogs = [`📱 Telegram Scraper Initiated at ${new Date().toLocaleString()}\n`];
+
+    const cliArgs = ['tsx', 'fetch_telegram_channel.ts'];
+    if (req.body && typeof req.body.maxAgeHours === 'number' && req.body.maxAgeHours > 0) {
+        cliArgs.push(`--max-age-hours=${req.body.maxAgeHours}`);
+    }
+    if (req.body && typeof req.body.limit === 'number' && req.body.limit > 0) {
+        cliArgs.push(`--limit=${req.body.limit}`);
+    }
+
+    // stdio: 'inherit' would steal the parent's stdin so the gramjs OTP
+    // prompt actually shows up in the same terminal that ran server.ts.
+    // We can't capture stdout in that mode though, so we keep 'pipe' and
+    // pass the parent's stdin through directly. The OTP is printed via
+    // console.log in the child, which the user types into the same TTY.
+    currentChildProcess = spawn('npx', cliArgs, {
+        cwd: process.cwd(),
+        env: { ...process.env, SERVER_PORT: String(PORT) },
+        shell: true,
+        stdio: ['inherit', 'pipe', 'pipe'],
+    });
+
+    let stdoutBuffer = '';
+    currentChildProcess.stdout?.on('data', (data: Buffer) => {
+        const chunk = data.toString();
+        // Echo to the server's TTY so OTP prompts are visible alongside
+        // the dashboard log feed.
+        process.stdout.write(chunk);
+        stdoutBuffer += chunk;
+        const lines = stdoutBuffer.split('\n');
+        stdoutBuffer = lines.pop() || '';
+        lines.forEach((line: string) => { if (line) currentLogs.push(line + '\n'); });
+    });
+    currentChildProcess.stderr?.on('data', (data: Buffer) => {
+        process.stderr.write(data);
+        currentLogs.push(data.toString());
+    });
+    currentChildProcess.on('close', (code: number | null) => {
+        if (stdoutBuffer) currentLogs.push(stdoutBuffer + '\n');
+        currentLogs.push(`\n✅ Telegram scraper finished with exit code ${code}\n`);
+        isRunning = false;
+        currentChildProcess = null;
+    });
+    currentChildProcess.on('error', (err: Error) => {
+        currentLogs.push(`\n❌ Failed to start Telegram scraper: ${err.message}\n`);
+        isRunning = false;
+        currentChildProcess = null;
+    });
+
+    res.json({ message: 'Telegram scraper started' });
+});
+
+// ============================================================
 // API: Manual JD Paste — bulk-process raw JDs the user pasted
 // from anywhere on the internet through the same Groq-first
 // extraction pipeline used for NAS posts.

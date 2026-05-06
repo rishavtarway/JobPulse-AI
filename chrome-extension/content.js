@@ -321,7 +321,7 @@ function showReviewPanel(summary) {
     if (!panel) {
         panel = document.createElement('div');
         panel.id = 'af-review-panel';
-        panel.style.cssText = `position:fixed;bottom:20px;right:20px;width:340px;background:#0f172a;color:white;border:1px solid #1e293b;border-radius:12px;z-index:9999999;box-shadow:0 10px 30px rgba(0,0,0,0.5);font-family:sans-serif;`;
+        panel.style.cssText = `position:fixed;bottom:20px;right:20px;width:380px;max-height:80vh;background:#0f172a;color:white;border:1px solid #1e293b;border-radius:12px;z-index:9999999;box-shadow:0 10px 30px rgba(0,0,0,0.5);font-family:sans-serif;display:flex;flex-direction:column;`;
     }
 
     const rows = summary.map(item => `
@@ -332,12 +332,19 @@ function showReviewPanel(summary) {
     `).join('');
 
     panel.innerHTML = `
-        <div style="padding:10px 12px;background:#1e293b;font-weight:700;font-size:13px;display:flex;justify-content:space-between">
+        <div style="padding:10px 12px;background:#1e293b;font-weight:700;font-size:13px;display:flex;justify-content:space-between;flex-shrink:0">
             <span>🚀 Apply Flow: ${summary.length} Fields</span>
             <span id="af-close" style="cursor:pointer">✕</span>
         </div>
-        <div style="max-height:240px;overflow-y:auto">${rows}</div>
-        <div style="padding:10px;text-align:center">
+        <div style="max-height:200px;overflow-y:auto;flex-shrink:0">${rows}</div>
+        <div style="padding:8px 12px;background:#1e293b;font-size:11px;font-weight:700;color:#94a3b8;display:flex;justify-content:space-between;align-items:center;border-top:1px solid #334155;flex-shrink:0">
+            <span>📋 Quick-Copy Fields</span>
+            <input id="af-chip-search" placeholder="filter…" style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:2px 6px;border-radius:4px;font-size:10px;width:90px;outline:none" />
+        </div>
+        <div id="af-chip-list" style="overflow-y:auto;flex:1;padding:6px;contain:layout style;will-change:scroll-position">
+            <div style="text-align:center;padding:14px;font-size:11px;color:#64748b">Loading copy chips…</div>
+        </div>
+        <div style="padding:10px;text-align:center;flex-shrink:0;border-top:1px solid #1e293b">
             <button id="af-refill" style="background:#3b82f6;color:white;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px">↻ Refill</button>
         </div>
     `;
@@ -345,6 +352,117 @@ function showReviewPanel(summary) {
     document.body.appendChild(panel);
     document.getElementById('af-close').addEventListener('click', () => panel.remove());
     document.getElementById('af-refill').addEventListener('click', () => { hasRunPass = false; panel.remove(); analyzePageAndProceed(); });
+    loadCopyChipsIntoPanel();
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Copy chips inside the bottom auto-fill panel — same data the popup
+// shows, but rendered in-page so the user can scroll through it
+// without leaving the page they're applying on. Uses event delegation
+// (one listener for all chips) and CSS containment to keep scroll
+// smooth on long field lists.
+// ─────────────────────────────────────────────────────────────────
+let _afChipsCache = [];
+async function loadCopyChipsIntoPanel() {
+    const list = document.getElementById('af-chip-list');
+    const search = document.getElementById('af-chip-search');
+    if (!list) return;
+    try {
+        const r = await fetch(`${FORM_SERVER}/api/resume/extract-fields`);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const data = await r.json();
+        _afChipsCache = afFlattenFieldDirectory(data);
+        afRenderChips(_afChipsCache);
+    } catch (e) {
+        list.innerHTML = `<div style="text-align:center;padding:14px;font-size:11px;color:#fca5a5">Failed to load fields (${(e && e.message) || e}).<br/>Is form_filler_server.ts running on :3001?</div>`;
+        return;
+    }
+    if (search && !search._wired) {
+        search._wired = true;
+        let timer = null;
+        search.addEventListener('input', () => {
+            clearTimeout(timer);
+            timer = setTimeout(() => {
+                const q = (search.value || '').toLowerCase().trim();
+                if (!q) { afRenderChips(_afChipsCache); return; }
+                afRenderChips(_afChipsCache.filter(c =>
+                    c.label.toLowerCase().includes(q) ||
+                    c.value.toLowerCase().includes(q) ||
+                    c.group.toLowerCase().includes(q)
+                ));
+            }, 100);
+        });
+    }
+}
+function afFlattenFieldDirectory(data) {
+    const chips = [];
+    if (!data || typeof data !== 'object') return chips;
+    for (const groupKey of ['identity', 'education', 'skills_grouped', 'common_questions']) {
+        const group = data[groupKey];
+        if (!group || typeof group !== 'object') continue;
+        const groupLabel = ({identity:'Identity',education:'Education',skills_grouped:'Skills (grouped)',common_questions:'Common Q&A'}[groupKey] || groupKey);
+        for (const [k, v] of Object.entries(group)) {
+            if (typeof v !== 'string' || !v.trim()) continue;
+            chips.push({ group: groupLabel, label: String(k).replace(/_/g, ' ').replace(/\b\w/g, m => m.toUpperCase()), value: v });
+        }
+    }
+    if (Array.isArray(data.skills_flat)) data.skills_flat.forEach(s => { if (typeof s === 'string' && s.trim()) chips.push({ group: 'Skills', label: s, value: s }); });
+    if (Array.isArray(data.experience)) {
+        data.experience.forEach(exp => {
+            const header = `${exp.role || ''} — ${exp.company || ''} (${exp.dates || ''})`.trim();
+            if (exp.role || exp.company) chips.push({ group: 'Experience', label: `${exp.company || 'Role'} · header`, value: header });
+            if (exp.dates) chips.push({ group: 'Experience', label: `${exp.company || 'Role'} · dates`, value: exp.dates });
+            if (exp.location) chips.push({ group: 'Experience', label: `${exp.company || 'Role'} · location`, value: exp.location });
+            (exp.bullets || []).forEach((b, i) => chips.push({ group: 'Experience', label: `${exp.company || 'Role'} · bullet ${i + 1}`, value: b }));
+        });
+    }
+    if (Array.isArray(data.projects)) {
+        data.projects.forEach(p => {
+            const header = `${p.name || ''} — ${p.tech || ''}`.trim();
+            if (p.name) chips.push({ group: 'Projects', label: `${p.name} · header`, value: header });
+            if (p.tech) chips.push({ group: 'Projects', label: `${p.name} · stack`, value: p.tech });
+            if (p.url) chips.push({ group: 'Projects', label: `${p.name} · URL`, value: p.url });
+            (p.bullets || []).forEach((b, i) => chips.push({ group: 'Projects', label: `${p.name} · bullet ${i + 1}`, value: b }));
+        });
+    }
+    if (Array.isArray(data.achievements)) data.achievements.forEach((a, i) => { if (typeof a === 'string' && a.trim()) chips.push({ group: 'Achievements', label: `#${i + 1}`, value: a }); });
+    return chips;
+}
+function afRenderChips(chips) {
+    const list = document.getElementById('af-chip-list');
+    if (!list) return;
+    if (!chips.length) { list.innerHTML = '<div style="text-align:center;padding:14px;font-size:11px;color:#64748b">No matching fields.</div>'; return; }
+    const byGroup = {};
+    chips.forEach(c => { (byGroup[c.group] = byGroup[c.group] || []).push(c); });
+    const html = Object.entries(byGroup).map(([groupName, gChips]) => {
+        const inner = gChips.map((c, idx) => {
+            const valEsc = String(c.value).replace(/"/g, '&quot;').replace(/</g, '&lt;');
+            const preview = c.value.length > 70 ? c.value.slice(0, 67) + '…' : c.value;
+            const previewEsc = preview.replace(/</g, '&lt;');
+            return `<div class="af-chip" data-cfv="${groupName}::${idx}" title="Click to copy · ${valEsc}" style="cursor:pointer;padding:5px 7px;margin:0 0 3px 0;background:#1e293b;border:1px solid #334155;border-radius:5px;font-size:11px;line-height:1.3;color:#e2e8f0;transition:background .15s">
+                <div style="font-weight:700;color:#94a3b8;font-size:9px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:1px">${c.label}</div>
+                <div style="word-break:break-word">${previewEsc}</div>
+            </div>`;
+        }).join('');
+        return `<div style="margin-bottom:8px"><div style="font-size:10px;font-weight:800;color:#fb923c;text-transform:uppercase;letter-spacing:.05em;margin:4px 0 4px 2px">${groupName}</div>${inner}</div>`;
+    }).join('');
+    list.innerHTML = html;
+
+    if (list._afChipHandler) list.removeEventListener('click', list._afChipHandler);
+    list._afChipHandler = async (ev) => {
+        const el = ev.target.closest && ev.target.closest('.af-chip');
+        if (!el || !list.contains(el)) return;
+        const [groupName, idxStr] = (el.getAttribute('data-cfv') || '').split('::');
+        const idx = parseInt(idxStr, 10);
+        const value = (byGroup[groupName] || [])[idx]?.value || '';
+        try {
+            await navigator.clipboard.writeText(value);
+            const prev = el.style.background;
+            el.style.background = '#166534';
+            setTimeout(() => { el.style.background = prev || '#1e293b'; }, 500);
+        } catch {}
+    };
+    list.addEventListener('click', list._afChipHandler);
 }
 
 // ─────────────────────────────────────────────────────────────────
