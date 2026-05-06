@@ -736,6 +736,12 @@
                             style="flex:1; background:linear-gradient(135deg,#5b21b6,#7c3aed); color:#fff;"
                             onclick="startNasDiscovery()">🌐 SYNC NAS</button>
                     </div>
+                    <button id="btn-trigger-telegram" class="btn-pill"
+                        style="width:100%; margin-top:12px; background:linear-gradient(135deg,#0088cc,#005f8d); color:#fff; display:flex; align-items:center; justify-content:center; gap:8px;"
+                        onclick="startTelegramScrape()" title="Scrape jobs from your Telegram channel (default: Mentorsetu Premium 1.1). First run will prompt for OTP in your server.ts terminal.">📱 SCRAPE TELEGRAM</button>
+                    <p style="font-size:10px; color:var(--text-muted); margin-top:6px; text-align:center; line-height:1.4;">
+                        Scrapes <strong>Mentorsetu Premium 1.1</strong> (or <code>TELEGRAM_CHANNEL_TITLE</code>). First run: enter OTP in your <code>server.ts</code> terminal.
+                    </p>
                     <button id="btn-stop" class="btn-pill btn-primary"
                         style="width:100%; margin-top:12px; display:none;" onclick="stopDiscovery()">🛑 STOP
                         PROCESS</button>
@@ -933,6 +939,35 @@
             } catch (_) {}
         })();
 
+        async function startTelegramScrape() {
+            const btn = document.getElementById('btn-trigger-telegram');
+            const amountEl = document.getElementById('nas-lookback-amount');
+            const unitEl = document.getElementById('nas-lookback-unit');
+            const rawAmount = parseInt(amountEl.value, 10);
+            const amount = Number.isFinite(rawAmount) && rawAmount > 0 ? rawAmount : 24;
+            const unit = unitEl.value === 'days' ? 'days' : 'hours';
+            const hours = unit === 'days' ? amount * 24 : amount;
+
+            btn.disabled = true;
+            btn.innerHTML = 'WAIT...';
+            document.getElementById('btn-stop').style.display = 'block';
+            document.getElementById('term-view').style.display = 'block';
+            try {
+                await fetch('/api/trigger-telegram', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ maxAgeHours: hours, limit: 100 }),
+                });
+            } catch (e) {
+                showToast('Failed to start Telegram scraper: ' + e.message);
+                btn.disabled = false;
+                btn.innerHTML = '📱 SCRAPE TELEGRAM';
+                document.getElementById('btn-stop').style.display = 'none';
+                return;
+            }
+            pollLogs();
+        }
+
         async function stopDiscovery() {
             try {
                 const r = await fetch('/api/stop', { method: 'POST' });
@@ -1015,6 +1050,11 @@
                     if (nasBtn) {
                         nasBtn.disabled = false;
                         nasBtn.innerHTML = '🌐 SYNC NAS';
+                    }
+                    const tgBtn = document.getElementById('btn-trigger-telegram');
+                    if (tgBtn) {
+                        tgBtn.disabled = false;
+                        tgBtn.innerHTML = '📱 SCRAPE TELEGRAM';
                     }
                     document.getElementById('btn-stop').style.display = 'none';
                     document.getElementById('btn-stop').disabled = false;

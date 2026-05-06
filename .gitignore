@@ -23,6 +23,10 @@ nas_debug_first_post.html
 # Manual JD paste temp files
 tmp_manual_jds_*.json
 
+# Telegram scraper local artifacts
+telegram_session.txt
+telegram_seen.json
+
 # Temporary testing files
 create_test_drafts.ts
 create_manual_drafts.ts
