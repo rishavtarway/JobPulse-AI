@@ -1160,7 +1160,7 @@ ${OPTIMIZE_FORMAT_SPEC}`;
                     role: 'user',
                     content:
                         basePrompt +
-                        '\n\nREMINDER: Output EXACTLY FIVE sections separated by [SECTION_SEPARATOR] in this order — LOCATION (one plain-text line), OBJECTIVE, SKILLS, EXPERIENCE, PROJECTS. Do NOT omit any. The OBJECTIVE is a single sentence opener that names the JD role.',
+                        '\n\nREMINDER: Output EXACTLY FIVE NAMED SECTIONS using these exact markers, each on its own line, in this order: ===LOCATION===, ===OBJECTIVE===, ===SKILLS===, ===EXPERIENCE===, ===PROJECTS===. Do NOT omit any marker. Do NOT use [SECTION_SEPARATOR]. The OBJECTIVE is a single sentence opener that names the JD role; it must NOT contain or echo the city from ===LOCATION===.',
                 },
             ]);
             const retried = splitFourSections(raw);
