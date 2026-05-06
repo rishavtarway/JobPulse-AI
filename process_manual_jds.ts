@@ -46,6 +46,21 @@ function disable(p: string, ms: number, reason: string) {
   console.warn(`   🚫 Disabling ${p} for ${Math.round(ms / 1000)}s (${reason}).`);
 }
 
+// Pull the first array we can find anywhere inside the LLM's JSON
+// response. Models with response_format=json_object wrap arrays under
+// arbitrary keys (jobs, data, items, results, etc.) and we shouldn't
+// silently degrade to [] just because we picked the wrong key. Mirror
+// findFirstArrayInResponse() in fetch_nas_community.ts (max depth 4).
+function findFirstArrayInResponse(node: any, maxDepth = 4): any[] | null {
+  if (Array.isArray(node)) return node;
+  if (!node || typeof node !== 'object' || maxDepth <= 0) return null;
+  for (const v of Object.values(node)) {
+    const found = findFirstArrayInResponse(v, maxDepth - 1);
+    if (found) return found;
+  }
+  return null;
+}
+
 function parseJson(content: string, provider: string): any {
   if (!content) return null;
   let cleaned = content.trim();
@@ -179,7 +194,10 @@ async function postToDashboard(j: ExtractedJob, sourceText: string): Promise<boo
         description: j.description?.slice(0, 600) || sourceText.slice(0, 600),
         jobDescription: sourceText,    // full original body for the modal
         postUrl: '',                   // no source URL for manually-pasted JDs
-        status: 'todo',                // user hasn't sent any email yet
+        status: 'to_apply',            // canonical status used by the
+                                       // Direct Portals tab filter in
+                                       // server.ts (status === 'to_apply'
+                                       // || 'manual_review').
         type: 'manual',
         channel: 'Manual JD Paste',
         telegramId: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -218,7 +236,10 @@ async function main() {
     console.error('❌ All LLM providers failed. No jobs extracted.');
     process.exit(2);
   }
-  let jobs: any[] = Array.isArray(result) ? result : (Array.isArray(result?.jobs) ? result.jobs : []);
+  // Groq's json_object mode forces an object wrapper, so we must walk
+  // the tree to find the array regardless of which key the model
+  // picked (jobs / data / items / results / etc.).
+  let jobs: any[] | null = Array.isArray(result) ? result : findFirstArrayInResponse(result);
   if (!Array.isArray(jobs)) jobs = [];
   const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
   console.log(`✅ Extracted ${jobs.length} job(s) in ${elapsed}s.`);
