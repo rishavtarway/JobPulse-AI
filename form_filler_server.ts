@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
+import { loadEnv } from './src/utils/load_env.js';
 import fs from 'fs';
 import path from 'path';
 import dns from 'node:dns';
@@ -10,7 +10,7 @@ if (typeof dns.setDefaultResultOrder === 'function') {
     dns.setDefaultResultOrder('ipv4first');
 }
 
-dotenv.config({ override: true });
+loadEnv();
 
 const app = express();
 const PORT = 3001;

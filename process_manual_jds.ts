@@ -21,11 +21,11 @@
 
 import fs from 'fs';
 import path from 'path';
-import dotenv from 'dotenv';
+import { loadEnv } from './src/utils/load_env.js';
 import { google } from 'googleapis';
 import nodemailer from 'nodemailer';
 
-dotenv.config({ override: true });
+loadEnv();
 
 const SERVER_PORT = process.env.SERVER_PORT || '3000';
 const DASHBOARD_INGEST = `http://localhost:${SERVER_PORT}/api/applications`;
