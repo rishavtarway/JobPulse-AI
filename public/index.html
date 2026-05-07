@@ -736,6 +736,10 @@
                             style="flex:1; background:linear-gradient(135deg,#5b21b6,#7c3aed); color:#fff;"
                             onclick="startNasDiscovery()">🌐 SYNC NAS</button>
                     </div>
+                    <button id="btn-force-redraft-nas" class="btn-pill"
+                        style="width:100%; margin-top:8px; background:linear-gradient(135deg,#dc2626,#b91c1c); color:#fff; display:flex; align-items:center; justify-content:center; gap:8px;"
+                        onclick="startNasDiscovery(true)"
+                        title="Re-extract every NAS post in the look-back window AND draft a fresh Gmail email for every job — even ones the dashboard already has. Use this to recover from runs where Gmail OAuth had expired so no drafts were created.">🔁 FORCE RE-DRAFT NAS</button>
                     <button id="btn-trigger-telegram" class="btn-pill"
                         style="width:100%; margin-top:12px; background:linear-gradient(135deg,#0088cc,#005f8d); color:#fff; display:flex; align-items:center; justify-content:center; gap:8px;"
                         onclick="startTelegramScrape()" title="Scrape jobs from your Telegram channel (default: Mentorsetu Premium 1.1). First run will prompt for OTP in your server.ts terminal.">📱 SCRAPE TELEGRAM</button>
@@ -888,8 +892,23 @@
             pollLogs();
         }
 
-        async function startNasDiscovery() {
-            const btn = document.getElementById('btn-trigger-nas');
+        async function startNasDiscovery(force) {
+            const isForce = force === true;
+            const syncBtn = document.getElementById('btn-trigger-nas');
+            const forceBtn = document.getElementById('btn-force-redraft-nas');
+
+            if (isForce) {
+                const ok = window.confirm(
+                    'FORCE RE-DRAFT will:\n' +
+                    '  • Re-extract every NAS post in the look-back window\n' +
+                    '  • Draft a fresh Gmail email for every job — even ones the dashboard already has\n' +
+                    '  • Update existing rows in place (not duplicate them)\n\n' +
+                    'Use this only when previous drafts failed (e.g. Gmail OAuth expired).\n\n' +
+                    'Continue?'
+                );
+                if (!ok) return;
+            }
+
             const amountEl = document.getElementById('nas-lookback-amount');
             const unitEl = document.getElementById('nas-lookback-unit');
             const rawAmount = parseInt(amountEl.value, 10);
@@ -903,20 +922,28 @@
                 localStorage.setItem('nas-lookback-unit', unit);
             } catch (_) {}
 
-            btn.disabled = true;
-            btn.innerHTML = 'WAIT...';
+            // Disable both buttons during a run so the user can't double-trigger.
+            syncBtn.disabled = true;
+            if (forceBtn) forceBtn.disabled = true;
+            const activeBtn = isForce ? forceBtn : syncBtn;
+            if (activeBtn) activeBtn.innerHTML = 'WAIT...';
+
             document.getElementById('btn-stop').style.display = 'block';
             document.getElementById('term-view').style.display = 'block';
             try {
                 await fetch('/api/trigger-nas', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ maxAgeHours: hours }),
+                    body: JSON.stringify({ maxAgeHours: hours, force: isForce }),
                 });
             } catch (e) {
                 showToast('Failed to start NAS scraper: ' + e.message);
-                btn.disabled = false;
-                btn.innerHTML = '🌐 SYNC NAS';
+                syncBtn.disabled = false;
+                syncBtn.innerHTML = '🌐 SYNC NAS';
+                if (forceBtn) {
+                    forceBtn.disabled = false;
+                    forceBtn.innerHTML = '🔁 FORCE RE-DRAFT NAS';
+                }
                 document.getElementById('btn-stop').style.display = 'none';
                 return;
             }
@@ -1050,6 +1077,11 @@
                     if (nasBtn) {
                         nasBtn.disabled = false;
                         nasBtn.innerHTML = '🌐 SYNC NAS';
+                    }
+                    const forceBtn = document.getElementById('btn-force-redraft-nas');
+                    if (forceBtn) {
+                        forceBtn.disabled = false;
+                        forceBtn.innerHTML = '🔁 FORCE RE-DRAFT NAS';
                     }
                     const tgBtn = document.getElementById('btn-trigger-telegram');
                     if (tgBtn) {
