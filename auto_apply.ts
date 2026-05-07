@@ -5,9 +5,9 @@ import readline from 'readline';
 import nodemailer from 'nodemailer';
 import { TelegramClient } from './src/telegram/client.js';
 import { Config } from './src/config/index.js';
-import dotenv from 'dotenv';
+import { loadEnv } from './src/utils/load_env.js';
 
-dotenv.config({ override: true });
+loadEnv();
 
 const STATE_FILE = path.join(process.cwd(), 'auto_apply_state.json');
 const APPLICATIONS_FILE = path.join(process.cwd(), 'applications.json');

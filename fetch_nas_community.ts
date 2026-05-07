@@ -49,14 +49,9 @@ import path from 'path';
 import puppeteer, { Browser, Page } from 'puppeteer';
 import { google } from 'googleapis';
 import nodemailer from 'nodemailer';
-import dotenv from 'dotenv';
+import { loadEnv } from './src/utils/load_env.js';
 
-// override:true so that updated .env values (e.g. rotated GROQ_API_KEY /
-// GEMINI_API_KEY) win over any stale values inherited from the parent
-// process (server.ts spawns this scraper as a child and Node passes its
-// own env vars through). Without this, swapping a key in .env wouldn't
-// take effect until the user restarted server.ts.
-dotenv.config({ override: true });
+loadEnv();
 
 // ============================================================================
 // CONSTANTS
