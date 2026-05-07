@@ -2029,6 +2029,10 @@ async function main() {
       );
 
       let newJobsThisPost = 0;
+      // True if any email draft for this post hit a non-fatal failure.
+      // Posts with failed drafts stay unseen so they retry on the next run
+      // (after the user re-authenticates / fixes the underlying issue).
+      let postHadFailedDraft = false;
       for (const j of jobs) {
         const slug = `${j.inPostId}-${(j.company || j.role || '').toLowerCase().replace(/[^a-z0-9-]/g, '')}`;
         const dedupeId = `nas-${p.card.postKey}-${slug}`.slice(0, 120);
@@ -2076,13 +2080,34 @@ async function main() {
           applyLink = extractApplyUrl(j.description || '') || extractApplyUrl(p.postText) || '';
         }
 
+        // Track whether this post's email draft actually got created.
+        // Used at the bottom of this loop iteration to decide whether
+        // the post should be marked as 'seen' — we DON'T want to skip
+        // a post on the next run if the only reason we couldn't draft
+        // its email was a Gmail OAuth failure (invalid_grant etc.).
+        let draftSucceededForThisJob = false;
+
         if (j.email && gmail && j.bodyHtml) {
           console.log(`   📧 Drafting email for ${j.company} → ${j.email}`);
           try {
             await createDraft(gmail, j.email, j.subject, j.bodyHtml);
             console.log(`      ✅ Draft created: "${j.subject}"`);
+            draftSucceededForThisJob = true;
           } catch (e) {
-            console.warn(`      ⚠️  Draft failed: ${(e as Error).message}`);
+            const msg = (e as Error).message || '';
+            console.warn(`      ⚠️  Draft failed: ${msg}`);
+            // invalid_grant = the Gmail OAuth refresh-token has been
+            // revoked / expired. Every subsequent draft this run will
+            // also fail, and silently marking 10 posts as seen would
+            // mean those jobs are lost forever. Bail loudly so the
+            // user re-authenticates instead.
+            if (/invalid_grant|invalid_rapt|unauthorized|401/i.test(msg)) {
+              console.error('\n❌ Gmail OAuth refresh-token is no longer valid (invalid_grant).');
+              console.error('   Re-authenticate by running:');
+              console.error('     rm token.json && npx tsx reauth_gmail.ts');
+              console.error('   Then re-run the scraper. Aborting now so the failed posts retry next run.\n');
+              throw new Error('GMAIL_INVALID_GRANT');
+            }
           }
           await pushToDashboard({
             ...baseRecord,
@@ -2093,6 +2118,11 @@ async function main() {
             type: 'web',
             description: `<b>SUBJECT: ${j.subject}</b><br><br>${j.bodyHtml}`,
           });
+          if (!draftSucceededForThisJob) {
+            // Surface the failure on the post itself so the run-summary
+            // logic below can keep this post unseen (retry next time).
+            postHadFailedDraft = true;
+          }
         } else if (applyLink || j.email) {
           console.log(
             `   📎 Saving manual-apply for ${j.company} → ${applyLink || j.email}`,
@@ -2127,9 +2157,10 @@ async function main() {
       }
 
       // Only persist a seen-post record if we actually extracted at
-      // least one job. Posts that returned 0 jobs stay unseen so they
-      // retry next run — self-healing.
-      if (newJobsThisPost > 0) {
+      // least one job AND every email draft for that post succeeded.
+      // Posts with failed drafts stay unseen so the next run retries
+      // them (after the user re-authenticates / clears the API issue).
+      if (newJobsThisPost > 0 && !postHadFailedDraft) {
         writeSeenPost({
           postKey: p.card.postKey,
           postUrl: p.postUrl,
@@ -2139,6 +2170,10 @@ async function main() {
           scrapedAt: p.scrapedAt.toISOString(),
           jobCount: newJobsThisPost,
         });
+      } else if (postHadFailedDraft) {
+        console.log(
+          `   ⎭️  Not marking "${p.detailHeadline || p.card.headline}" as seen (draft failed) so it retries next run.`,
+        );
       } else {
         console.log(
           `   ⎭️  Not marking "${p.detailHeadline || p.card.headline}" as seen (0 jobs) so it retries next run.`,
