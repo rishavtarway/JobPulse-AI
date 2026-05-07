@@ -337,9 +337,14 @@ app.post('/api/applications', (req, res) => {
         const prev = apps[existingIdx];
         apps[existingIdx] = {
             ...prev,
-            // Refresh everything the scraper now knows; preserve id +
-            // user-edited fields (notes, status overrides via PATCH stay
-            // wherever the user left them — see PATCH endpoint below).
+            // Refresh the scraper-sourced fields (company / role / email
+            // / link / postUrl / description / dates), but DO NOT touch
+            // the user-managed lifecycle fields:
+            //   - status: user moves it through applied → intro_call →
+            //     offered / rejected via PATCH; a re-sync must never
+            //     reset it back to 'applied'.
+            //   - notes: free-form, user-owned.
+            // The id stays via ...prev so dashboard refs don't break.
             telegramId,
             channel: channel || prev.channel,
             company,
@@ -352,8 +357,8 @@ app.post('/api/applications', (req, res) => {
             appliedDate: appliedDate || prev.appliedDate || new Date().toISOString(),
             postedDate: req.body.postedDate || prev.postedDate || null,
             _timestamp: _timestamp || Date.now(),
-            status,
             type: type || prev.type,
+            // status & notes deliberately omitted — preserved from ...prev.
         };
         writeApps(apps);
         return res.json(apps[existingIdx]);
