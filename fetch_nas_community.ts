@@ -1761,6 +1761,18 @@ async function main() {
 
     const seen = readSeenPosts();
     const knownIds = knownDedupeIds();
+
+    // FORCE_REDRAFT=1 makes the scraper treat every post in the look-back
+    // window as fresh — bypasses both nas_seen_posts.json (post-level
+    // dedup) AND knownIds (job-level dedup against applications.json).
+    // Used by the dashboard "🔁 Force Re-Draft" button to recover from
+    // earlier runs whose drafts failed (e.g. stale Gmail OAuth) and
+    // produced fake-applied rows / seen markers we can't auto-clean.
+    const forceRedraft = process.env.FORCE_REDRAFT === '1';
+    if (forceRedraft) {
+      console.log('🔁 FORCE_REDRAFT=1 — bypassing seen-posts + knownIds dedup; every job in the look-back window will be drafted fresh.');
+    }
+
     const feedUrl = page.url();
     const scrapeStart = new Date();
 
@@ -1801,7 +1813,8 @@ async function main() {
 
       // Dedup gate: skip but DO NOT stop — since we walk oldest-first, a
       // duplicate just means we already covered that one earlier.
-      if (seen[card.postKey]) {
+      // FORCE_REDRAFT bypasses this so already-seen posts are reprocessed.
+      if (!forceRedraft && seen[card.postKey]) {
         console.log(`   ⏭️  Skipping already-seen post "${card.headline}".`);
         continue;
       }
@@ -2036,7 +2049,11 @@ async function main() {
       for (const j of jobs) {
         const slug = `${j.inPostId}-${(j.company || j.role || '').toLowerCase().replace(/[^a-z0-9-]/g, '')}`;
         const dedupeId = `nas-${p.card.postKey}-${slug}`.slice(0, 120);
-        if (knownIds.has(dedupeId)) {
+        // FORCE_REDRAFT bypasses applications.json dedup so jobs that
+        // already exist (e.g. as fake 'applied' rows from a botched run)
+        // get re-extracted and re-drafted. The dashboard de-duplicates
+        // by telegramId so the row will be updated rather than appended.
+        if (!forceRedraft && knownIds.has(dedupeId)) {
           console.log(`   ⏭️  Already tracked: ${j.company || j.role || dedupeId}`);
           continue;
         }

@@ -324,6 +324,41 @@ app.post('/api/applications', (req, res) => {
     if (!company) return res.status(400).json({ error: 'Company is required' });
 
     const apps = readApps();
+
+    // Upsert by telegramId (= scraper dedupeId) when present — this lets
+    // FORCE_REDRAFT runs update existing rows in place instead of
+    // appending duplicates. Falls back to plain append for rows without
+    // a stable identity (manual additions from the dashboard form).
+    const existingIdx = telegramId
+        ? apps.findIndex((a: any) => a.telegramId === telegramId)
+        : -1;
+
+    if (existingIdx !== -1) {
+        const prev = apps[existingIdx];
+        apps[existingIdx] = {
+            ...prev,
+            // Refresh everything the scraper now knows; preserve id +
+            // user-edited fields (notes, status overrides via PATCH stay
+            // wherever the user left them — see PATCH endpoint below).
+            telegramId,
+            channel: channel || prev.channel,
+            company,
+            role: role || prev.role || 'Software Engineer',
+            email: email || prev.email || '',
+            link: link || prev.link || '',
+            postUrl: postUrl || prev.postUrl || '',
+            description: description || prev.description || '',
+            jobDescription: jobDescription || prev.jobDescription || '',
+            appliedDate: appliedDate || prev.appliedDate || new Date().toISOString(),
+            postedDate: req.body.postedDate || prev.postedDate || null,
+            _timestamp: _timestamp || Date.now(),
+            status,
+            type: type || prev.type,
+        };
+        writeApps(apps);
+        return res.json(apps[existingIdx]);
+    }
+
     const newApp = {
         id: Date.now().toString(),
         telegramId: telegramId || null,
@@ -544,9 +579,19 @@ app.post('/api/trigger-nas', (req, res) => {
         cliArgs.push('--max-age-hours', String(req.body.maxAgeHours));
     }
 
+    // Force re-draft mode: bypass both seen-posts and applications.json
+    // dedup so every job in the look-back window gets re-extracted and
+    // re-drafted. Used to recover from runs whose drafts failed.
+    const forceRedraft = !!(req.body && req.body.force === true);
+    const childEnv: NodeJS.ProcessEnv = { ...process.env, SERVER_PORT: String(PORT) };
+    if (forceRedraft) {
+        childEnv.FORCE_REDRAFT = '1';
+        currentLogs.push('🔁 Force Re-Draft mode enabled — dedup bypassed.\n');
+    }
+
     currentChildProcess = spawn('npx', cliArgs, {
         cwd: process.cwd(),
-        env: { ...process.env, SERVER_PORT: String(PORT) },
+        env: childEnv,
         shell: true,
     });
 
