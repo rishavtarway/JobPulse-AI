@@ -335,11 +335,35 @@ app.post('/api/applications', (req, res) => {
 
     if (existingIdx !== -1) {
         const prev = apps[existingIdx];
+
+        // Status lifecycle ranking — scrapers may ADVANCE status forward
+        // (e.g. auto_apply.ts first POSTs as 'to_apply', then re-POSTs
+        // as 'applied' once the Gmail draft succeeds; FORCE_REDRAFT
+        // also re-POSTs 'applied' after a successful re-draft) but
+        // must NEVER demote a status the user has moved forward via
+        // PATCH (e.g. 'intro_call', 'offered', 'rejected').
+        // Unknown statuses default to rank 0 so they never override
+        // a higher-ranked existing status.
+        const STATUS_RANK: Record<string, number> = {
+            to_apply: 0,
+            manual_review: 1,
+            applied: 2,
+            intro_call: 3,
+            offered: 4,
+            rejected: 4,
+        };
+        const prevRank = STATUS_RANK[prev.status as string] ?? 0;
+        const newRank = STATUS_RANK[status as string] ?? 0;
+        const nextStatus = newRank > prevRank ? status : prev.status;
+
         apps[existingIdx] = {
             ...prev,
-            // Refresh everything the scraper now knows; preserve id +
-            // user-edited fields (notes, status overrides via PATCH stay
-            // wherever the user left them — see PATCH endpoint below).
+            // Refresh the scraper-sourced fields (company / role / email
+            // / link / postUrl / description / dates). The id stays via
+            // ...prev so dashboard refs don't break. Notes are
+            // preserved (free-form, user-owned). Status uses the
+            // forward-only rule above so to_apply→applied advances
+            // but applied/intro_call/offered/rejected aren't demoted.
             telegramId,
             channel: channel || prev.channel,
             company,
@@ -352,8 +376,9 @@ app.post('/api/applications', (req, res) => {
             appliedDate: appliedDate || prev.appliedDate || new Date().toISOString(),
             postedDate: req.body.postedDate || prev.postedDate || null,
             _timestamp: _timestamp || Date.now(),
-            status,
             type: type || prev.type,
+            status: nextStatus,
+            // notes deliberately omitted — preserved from ...prev.
         };
         writeApps(apps);
         return res.json(apps[existingIdx]);
