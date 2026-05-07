@@ -10,7 +10,7 @@ if (typeof dns.setDefaultResultOrder === 'function') {
     dns.setDefaultResultOrder('ipv4first');
 }
 
-dotenv.config();
+dotenv.config({ override: true });
 
 const app = express();
 const PORT = 3001;
