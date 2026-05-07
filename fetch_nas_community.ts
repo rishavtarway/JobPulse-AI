@@ -2109,6 +2109,18 @@ async function main() {
               throw new Error('GMAIL_INVALID_GRANT');
             }
           }
+          if (!draftSucceededForThisJob) {
+            // Draft failed (non-fatal — invalid_grant already threw above).
+            // Skip pushToDashboard / knownIds.add / newJobsThisPost++ so:
+            //   1. applications.json doesn't get a fake 'applied' row that
+            //      claims an email was drafted when it wasn't.
+            //   2. dedupeId isn't recorded, so when the post retries on
+            //      the next run (postHadFailedDraft keeps it unseen) the
+            //      same job ISN'T silently filtered out by knownIds and
+            //      can actually be drafted this time.
+            postHadFailedDraft = true;
+            continue;
+          }
           await pushToDashboard({
             ...baseRecord,
             email: j.email,
@@ -2118,11 +2130,6 @@ async function main() {
             type: 'web',
             description: `<b>SUBJECT: ${j.subject}</b><br><br>${j.bodyHtml}`,
           });
-          if (!draftSucceededForThisJob) {
-            // Surface the failure on the post itself so the run-summary
-            // logic below can keep this post unseen (retry next time).
-            postHadFailedDraft = true;
-          }
         } else if (applyLink || j.email) {
           console.log(
             `   📎 Saving manual-apply for ${j.company} → ${applyLink || j.email}`,
