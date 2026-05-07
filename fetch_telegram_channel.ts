@@ -42,7 +42,7 @@ import { TelegramClient } from 'telegram';
 // eslint-disable-next-line import/no-unresolved
 import { StringSession } from 'telegram/sessions/index.js';
 
-dotenv.config();
+dotenv.config({ override: true });
 
 const SERVER_PORT = process.env.SERVER_PORT || '3000';
 const DASHBOARD_INGEST = `http://localhost:${SERVER_PORT}/api/applications`;

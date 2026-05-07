@@ -25,7 +25,7 @@ import dotenv from 'dotenv';
 import { google } from 'googleapis';
 import nodemailer from 'nodemailer';
 
-dotenv.config();
+dotenv.config({ override: true });
 
 const SERVER_PORT = process.env.SERVER_PORT || '3000';
 const DASHBOARD_INGEST = `http://localhost:${SERVER_PORT}/api/applications`;

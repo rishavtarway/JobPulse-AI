@@ -7,7 +7,7 @@ import { TelegramClient } from './src/telegram/client.js';
 import { Config } from './src/config/index.js';
 import dotenv from 'dotenv';
 
-dotenv.config();
+dotenv.config({ override: true });
 
 const STATE_FILE = path.join(process.cwd(), 'auto_apply_state.json');
 const APPLICATIONS_FILE = path.join(process.cwd(), 'applications.json');
