@@ -516,6 +516,12 @@ async function callAI(prompt: string, jsonFlag = false): Promise<any> {
       body: JSON.stringify({
         model: 'google/gemini-2.0-flash-lite-001',
         temperature: 0.1,
+        // OpenRouter rejects requests whose budget exceeds available
+        // credits. The model's default max is 8192 which costs more
+        // than free-tier accounts can afford ("requested 8192, can
+        // only afford 7833"). 4096 is plenty for the batched
+        // extract-and-draft prompt's output.
+        max_tokens: 4096,
         messages: [
           ...(jsonFlag
             ? [
